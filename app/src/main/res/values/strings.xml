@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">True Skies</string>
+    <string name="tab_map">Map</string>
+    <string name="tab_flights">Flights</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_more">More</string>
+</resources>
