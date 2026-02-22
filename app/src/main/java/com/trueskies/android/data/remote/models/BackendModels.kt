@@ -23,14 +23,14 @@ data class BackendFlightResponse(
 @Serializable
 data class BackendFlightDetailsResponse(
     val success: Boolean,
-    val flight: BackendFlight? = null,
+    val flight: List<BackendFlight>? = null,
     val flights: List<BackendFlight>? = null,
     val metadata: BackendResponseMetadata? = null,
     val timestamp: String? = null
 ) {
-    /** Returns the best flight, preferring single flight, then first from array */
+    /** Returns the best flight, preferring flight array first, then flights array */
     val resolvedFlight: BackendFlight?
-        get() = flight ?: flights?.firstOrNull()
+        get() = flight?.firstOrNull() ?: flights?.firstOrNull()
 }
 
 @Serializable

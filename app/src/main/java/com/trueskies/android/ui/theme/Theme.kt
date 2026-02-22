@@ -1,18 +1,18 @@
 package com.trueskies.android.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * TrueSkies Material 3 theme — dark-mode-first design
- * matching the iOS LiquidGlass aesthetic.
+ * TrueSkies Material 3 theme — dark-mode-first design.
+ * Edge-to-edge enabled for the map-centric layout.
  */
 
 private val TrueSkiesDarkColorScheme = darkColorScheme(
@@ -48,8 +48,10 @@ fun TrueSkiesTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = TrueSkiesColors.SurfacePrimary.toArgb()
+            // Edge-to-edge: transparent bars so the map shows behind them
+            window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = TrueSkiesColors.SurfacePrimary.toArgb()
+            WindowCompat.setDecorFitsSystemWindows(window, false)
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
             WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
         }

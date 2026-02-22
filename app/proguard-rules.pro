@@ -1,4 +1,4 @@
-# Add project specific ProGuard rules here.
+n# Add project specific ProGuard rules here.
 
 # Keep kotlinx.serialization classes
 -keepattributes *Annotation*, InnerClasses
