@@ -22,17 +22,31 @@ class FlightDetailViewModel @Inject constructor(
         val flight: Flight? = null,
         val isLoading: Boolean = true,
         val error: String? = null,
-        val isAddedToPersonal: Boolean = false
+        val isAddedToPersonal: Boolean = false,
+        val seat: String = "",
+        val notes: String = ""
     )
 
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
 
     private val flightId: String = savedStateHandle.get<String>("flightId") ?: ""
+    private var personalFlightLocalId: String? = null
 
     init {
         if (flightId.isNotEmpty()) {
             loadFlightDetails()
+            observePersonalFlights()
+        }
+    }
+
+    private fun observePersonalFlights() {
+        viewModelScope.launch {
+            repository.getPersonalFlightsFlow().collect { flights ->
+                val matched = flights.find { it.flight.id == flightId }
+                personalFlightLocalId = matched?.localId
+                _uiState.value = _uiState.value.copy(isAddedToPersonal = matched != null)
+            }
         }
     }
 
@@ -61,8 +75,22 @@ class FlightDetailViewModel @Inject constructor(
         val flight = _uiState.value.flight ?: return
         viewModelScope.launch {
             repository.addPersonalFlight(flight)
-            _uiState.value = _uiState.value.copy(isAddedToPersonal = true)
         }
+    }
+
+    fun deleteFromPersonalFlights() {
+        val localId = personalFlightLocalId ?: return
+        viewModelScope.launch {
+            repository.deletePersonalFlight(localId)
+        }
+    }
+
+    fun updateSeat(seat: String) {
+        _uiState.value = _uiState.value.copy(seat = seat)
+    }
+
+    fun updateNotes(notes: String) {
+        _uiState.value = _uiState.value.copy(notes = notes)
     }
 
     fun refresh() {

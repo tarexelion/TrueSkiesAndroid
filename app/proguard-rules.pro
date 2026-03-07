@@ -1,4 +1,4 @@
-n# Add project specific ProGuard rules here.
+# Add project specific ProGuard rules here.
 
 # Keep kotlinx.serialization classes
 -keepattributes *Annotation*, InnerClasses
@@ -35,3 +35,6 @@ n# Add project specific ProGuard rules here.
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# ZXing
+-keep class com.google.zxing.** { *; }

@@ -1,6 +1,9 @@
 package com.trueskies.android.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,25 +16,35 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.trueskies.android.ui.components.LiquidGlassCard
 import com.trueskies.android.ui.theme.*
 
 @Composable
-fun MoreScreen() {
+fun MoreScreen(
+    onNavigate: (String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val versionName = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+    } catch (e: Exception) { "1.0.0" }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(TrueSkiesColors.SurfacePrimary)
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
     ) {
-        // Header
+        // Large navigation title
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    top = TrueSkiesSpacing.huge,
+                    top = TrueSkiesSpacing.md,
                     start = TrueSkiesSpacing.lg,
                     end = TrueSkiesSpacing.lg,
                     bottom = TrueSkiesSpacing.md
@@ -48,83 +61,75 @@ fun MoreScreen() {
             modifier = Modifier.padding(horizontal = TrueSkiesSpacing.md),
             verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.sm)
         ) {
-            // Account Section
-            SectionHeader("Account")
-            LiquidGlassCard {
-                Column {
-                    MoreMenuItem(
-                        icon = Icons.Default.Person,
-                        title = "Profile",
-                        subtitle = "Manage your account"
-                    )
-                    MenuDivider()
-                    MoreMenuItem(
-                        icon = Icons.Default.Notifications,
-                        title = "Notifications",
-                        subtitle = "Configure alerts"
-                    )
-                    MenuDivider()
-                    MoreMenuItem(
-                        icon = Icons.Default.Star,
-                        title = "Subscription",
-                        subtitle = "Premium features"
-                    )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(TrueSkiesSpacing.xs))
-
-            // Features Section
-            SectionHeader("Features")
+            // ── Flight Management ──
+            SectionHeader("Flight Management")
             LiquidGlassCard {
                 Column {
                     MoreMenuItem(
                         icon = Icons.Default.BarChart,
+                        iconTint = TrueSkiesColors.AccentBlue,
                         title = "Flight Stats",
-                        subtitle = "Your flying statistics"
+                        subtitle = "Your flying statistics",
+                        onClick = { onNavigate("flight_log") }
                     )
                     MenuDivider()
                     MoreMenuItem(
                         icon = Icons.Default.People,
+                        iconTint = Color(0xFF8B5CF6),
                         title = "Friends",
-                        subtitle = "Track friends' flights"
+                        subtitle = "Track friends' flights",
+                        onClick = { onNavigate("friends") }
                     )
                     MenuDivider()
                     MoreMenuItem(
                         icon = Icons.Default.History,
+                        iconTint = TrueSkiesColors.AccentCyan,
                         title = "Flight Log",
-                        subtitle = "Past flights history"
+                        subtitle = "Your past flights",
+                        onClick = { onNavigate("flight_log") }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(TrueSkiesSpacing.xs))
+            Spacer(Modifier.height(TrueSkiesSpacing.xs))
 
-            // App Section
+            // ── App ──
             SectionHeader("App")
             LiquidGlassCard {
                 Column {
                     MoreMenuItem(
                         icon = Icons.Default.Settings,
+                        iconTint = TrueSkiesColors.TextSecondary,
                         title = "Settings",
-                        subtitle = "App preferences"
+                        subtitle = "Notifications, units, display",
+                        onClick = { onNavigate("settings") }
                     )
                     MenuDivider()
                     MoreMenuItem(
                         icon = Icons.AutoMirrored.Filled.HelpOutline,
+                        iconTint = Color(0xFF8B5CF6),
                         title = "Help & Support",
-                        subtitle = "FAQ and contact"
+                        subtitle = "FAQ and contact",
+                        onClick = {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse("https://trueskies.app/support"))
+                            )
+                        },
+                        trailingIcon = Icons.Default.OpenInNew
                     )
                     MenuDivider()
                     MoreMenuItem(
                         icon = Icons.Default.Info,
+                        iconTint = TrueSkiesColors.AccentBlue,
                         title = "About",
-                        subtitle = "Version 1.0.0"
+                        subtitle = "Version $versionName",
+                        onClick = { onNavigate("about") }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(TrueSkiesSpacing.xxl))
+            Spacer(Modifier.height(TrueSkiesSpacing.xxl))
         }
     }
 }
@@ -145,13 +150,16 @@ private fun SectionHeader(title: String) {
 @Composable
 private fun MoreMenuItem(
     icon: ImageVector,
+    iconTint: Color = TrueSkiesColors.AccentBlue,
     title: String,
     subtitle: String? = null,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    trailingIcon: ImageVector = Icons.Default.ChevronRight
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(TrueSkiesSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -159,33 +167,25 @@ private fun MoreMenuItem(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(TrueSkiesCornerRadius.sm))
-                .background(TrueSkiesColors.AccentBlue.copy(alpha = 0.15f)),
+                .background(iconTint.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = TrueSkiesColors.AccentBlue,
+                tint = iconTint,
                 modifier = Modifier.size(20.dp)
             )
         }
-        Spacer(modifier = Modifier.width(TrueSkiesSpacing.md))
+        Spacer(Modifier.width(TrueSkiesSpacing.md))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = TrueSkiesTypography.titleMedium,
-                color = TrueSkiesColors.TextPrimary
-            )
+            Text(title, style = TrueSkiesTypography.titleMedium, color = TrueSkiesColors.TextPrimary)
             subtitle?.let {
-                Text(
-                    text = it,
-                    style = TrueSkiesTypography.bodySmall,
-                    color = TrueSkiesColors.TextTertiary
-                )
+                Text(it, style = TrueSkiesTypography.bodySmall, color = TrueSkiesColors.TextTertiary)
             }
         }
         Icon(
-            imageVector = Icons.Default.ChevronRight,
+            imageVector = trailingIcon,
             contentDescription = null,
             tint = TrueSkiesColors.TextMuted,
             modifier = Modifier.size(20.dp)

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Set-Location ''c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat assembleDebug 2>&1 | Tee-Object -Variable output; $output\")"
+    ]
+  }
+}

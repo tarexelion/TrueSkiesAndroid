@@ -35,8 +35,8 @@ fun LiquidGlassCard(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        TrueSkiesColors.SurfaceCard,
-                        TrueSkiesColors.SurfaceCard.copy(alpha = 0.95f)
+                        TrueSkiesColors.SurfaceElevated,
+                        TrueSkiesColors.SurfaceElevated.copy(alpha = 0.92f)
                     )
                 )
             )

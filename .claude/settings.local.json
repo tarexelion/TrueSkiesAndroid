@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"ERROR\\\\|Exception\\\\|FAILED\\\\|Could not\\\\|error:\" \"C:/Users/Tuna/.gradle/daemon/9.2.1/\"*.log)",
+      "Bash(ls -t \"C:/Users/Tuna/.gradle/daemon/9.2.1/\"*.log)",
+      "Bash(./gradlew build)",
+      "Bash(cmd /c \"gradlew.bat build\")",
+      "Bash(cmd /c \"gradlew.bat build 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid && gradlew.bat build --info 2>&1 | findstr /i \"\"error failed exception could not\"\"\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid && gradlew.bat build > C:\\\\Users\\\\Tuna\\\\gradle_build_out.txt 2>&1\")",
+      "Read(//c/Users/Tuna/**)",
+      "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat build 2>&1 | Tee-Object -FilePath ''C:\\\\Users\\\\Tuna\\\\gradle_build_out.txt''\")",
+      "Bash(echo \"JAVA_HOME: $JAVA_HOME\")",
+      "Bash(java -version)",
+      "Bash(powershell -Command \"Get-ChildItem ''C:\\\\Program Files\\\\Java'' -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem ''C:\\\\Program Files\\\\Microsoft'' -Filter ''*jdk*'' -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem ''C:\\\\Program Files\\\\Eclipse Adoptium'' -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem ''C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr'' -ErrorAction SilentlyContinue | Select-Object -First 1 Name\")",
+      "Bash(powershell -Command \":*)",
+      "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat build 2>&1 | Select-Object -Last 20\")",
+      "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat build 2>&1 | Select-Object -Last 15\")",
+      "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat build 2>&1 | Select-Object -Last 10\")",
+      "Bash(where java)",
+      "Read(//c/Program Files/Java/**)",
+      "Read(//c/Program Files/**)",
+      "Bash(\"C:/Program Files/Android/Android Studio/jbr/bin/java\" -version)",
+      "Bash(xargs grep -l -i \"share\\\\|qr\")",
+      "Bash(sed -n '202,215p' \"c:/Users/Tuna/Documents/Insania/TrueSkies iOS/TrueSkies/TrueSkies/Views/Components/PersonalFlightCard.swift\")",
+      "Bash(sed -n '411,480p' \"c:/Users/Tuna/Documents/Insania/TrueSkies iOS/TrueSkies/TrueSkies/Views/Components/PersonalFlightCard.swift\")",
+      "Bash(sed -n '640,670p' \"c:/Users/Tuna/Documents/Insania/TrueSkies iOS/TrueSkies/TrueSkies/Views/Components/PersonalFlightCard.swift\")",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid && gradlew.bat assembleDebug\")"
+    ]
+  }
+}

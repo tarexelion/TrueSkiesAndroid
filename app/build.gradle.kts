@@ -117,4 +117,8 @@ dependencies {
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+
+    // QR Code generation + scanning
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
 }

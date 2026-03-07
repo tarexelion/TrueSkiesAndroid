@@ -16,8 +16,11 @@ import com.trueskies.android.ui.theme.*
 import com.trueskies.android.ui.viewmodels.MapViewModel
 
 /**
- * Home screen — full-screen map with a draggable Material 3 bottom sheet.
- * The sheet contains the tab navigation (My Flights, Friends' Flights, Flight Log).
+ * My Flights tab — full-screen map with a draggable bottom sheet.
+ * Matches iOS ContentView: MapKit fills the entire screen, PersonalFlightsPanel
+ * slides up from the bottom as a BottomCardView.
+ *
+ * Map type: HYBRID (satellite + roads) — mirrors iOS default .hybrid style.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,7 +35,7 @@ fun HomeScreen(
         )
     )
 
-    // Default camera: Turkey region (matching iOS screenshot)
+    // Default camera: Turkey/Europe region (sensible first-launch default)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(LatLng(38.5, 30.0), 5f)
     }
@@ -40,11 +43,10 @@ fun HomeScreen(
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
         sheetContent = {
-            HomeBottomSheetContent(
-                onFlightClick = onFlightClick
-            )
+            MyFlightsSheetContent(onFlightClick = onFlightClick)
         },
-        sheetPeekHeight = 320.dp,
+        // Peek: drag handle + search bar + ~1 card — mirrors iOS PersonalFlightsPanel collapsed height
+        sheetPeekHeight = 260.dp,
         sheetShape = RoundedCornerShape(
             topStart = TrueSkiesCornerRadius.xl,
             topEnd = TrueSkiesCornerRadius.xl
@@ -56,22 +58,22 @@ fun HomeScreen(
             )
         },
         sheetTonalElevation = 0.dp,
-        sheetShadowElevation = 16.dp,
+        sheetShadowElevation = 20.dp,
         containerColor = TrueSkiesColors.SurfacePrimary
-    ) { innerPadding ->
-        // Full-screen map as background
+    ) {
+        // Full-screen satellite map — matches iOS default .hybrid map style
         Box(modifier = Modifier.fillMaxSize()) {
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    mapType = MapType.NORMAL,
+                    mapType = MapType.HYBRID,
                     isMyLocationEnabled = false
                 ),
                 uiSettings = MapUiSettings(
                     zoomControlsEnabled = false,
                     myLocationButtonEnabled = false,
-                    compassEnabled = true
+                    compassEnabled = false
                 )
             ) {
                 // Flight markers
@@ -92,28 +94,29 @@ fun HomeScreen(
                 }
             }
 
-            // Loading indicator
+            // Loading indicator — top center below status bar
             if (mapState.isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 80.dp),
-                    color = TrueSkiesColors.AccentBlue
+                        .statusBarsPadding()
+                        .padding(top = TrueSkiesSpacing.md),
+                    color = TrueSkiesColors.AccentBlue,
+                    strokeWidth = 2.dp
                 )
             }
 
-            // Backend status warning
+            // Backend connection warning pill
             if (!mapState.isBackendHealthy) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 60.dp)
                         .statusBarsPadding()
-                        .navigationBarsPadding()
+                        .padding(top = TrueSkiesSpacing.md)
                 ) {
                     Surface(
-                        color = TrueSkiesColors.Warning.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(TrueSkiesCornerRadius.sm)
+                        color = TrueSkiesColors.Warning.copy(alpha = 0.92f),
+                        shape = RoundedCornerShape(TrueSkiesCornerRadius.pill)
                     ) {
                         Text(
                             text = "Backend Connection Issue",
@@ -121,7 +124,7 @@ fun HomeScreen(
                             color = TrueSkiesColors.TextInverse,
                             modifier = Modifier.padding(
                                 horizontal = TrueSkiesSpacing.md,
-                                vertical = TrueSkiesSpacing.xs
+                                vertical = TrueSkiesSpacing.xxs
                             )
                         )
                     }
@@ -130,7 +133,7 @@ fun HomeScreen(
         }
     }
 
-    // Load flights when camera stops moving
+    // Reload flights when camera settles
     LaunchedEffect(cameraPositionState.isMoving) {
         if (!cameraPositionState.isMoving) {
             val bounds = cameraPositionState.projection?.visibleRegion?.latLngBounds
