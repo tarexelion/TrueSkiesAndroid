@@ -26,7 +26,16 @@
       "Bash(sed -n '411,480p' \"c:/Users/Tuna/Documents/Insania/TrueSkies iOS/TrueSkies/TrueSkies/Views/Components/PersonalFlightCard.swift\")",
       "Bash(sed -n '640,670p' \"c:/Users/Tuna/Documents/Insania/TrueSkies iOS/TrueSkies/TrueSkies/Views/Components/PersonalFlightCard.swift\")",
       "Bash(./gradlew assembleDebug)",
-      "Bash(cmd /c \"cd /d c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid && gradlew.bat assembleDebug\")"
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid && gradlew.bat assembleDebug\")",
+      "Bash(ln -s /usr/bin/jlink /Users/tuna/.antigravity/extensions/redhat.java-1.53.0-darwin-arm64/jre/21.0.10-macosx-aarch64/bin/jlink)",
+      "Bash(ln -s /Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home/bin/jmod /Users/tuna/.antigravity/extensions/redhat.java-1.53.0-darwin-arm64/jre/21.0.10-macosx-aarch64/bin/jmod)",
+      "Bash(EXT_BIN=\"/Users/tuna/.antigravity/extensions/redhat.java-1.53.0-darwin-arm64/jre/21.0.10-macosx-aarch64/bin\")",
+      "Bash(JDK_BIN=\"/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home/bin\")",
+      "Bash(for tool in jimage jnativescan jpackage)",
+      "Bash(do)",
+      "Bash(ln -s \"$JDK_BIN/$tool\" \"$EXT_BIN/$tool\")",
+      "Bash(echo \"linked: $tool\")",
+      "Bash(done)"
     ]
   }
 }

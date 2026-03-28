@@ -1,12 +1,17 @@
 package com.trueskies.android.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.maps.model.CameraPosition
@@ -22,7 +27,7 @@ import com.trueskies.android.ui.viewmodels.MapViewModel
  *
  * Map type: HYBRID (satellite + roads) — mirrors iOS default .hybrid style.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     onFlightClick: (String) -> Unit,
@@ -34,6 +39,17 @@ fun HomeScreen(
             initialValue = SheetValue.PartiallyExpanded
         )
     )
+    val scope = rememberCoroutineScope()
+    val isImeVisible = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible) {
+            scope.launch { scaffoldState.bottomSheetState.expand() }
+        } else {
+            scope.launch { scaffoldState.bottomSheetState.partialExpand() }
+        }
+    }
 
     // Default camera: Turkey/Europe region (sensible first-launch default)
     val cameraPositionState = rememberCameraPositionState {
@@ -66,6 +82,7 @@ fun HomeScreen(
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
+                onMapClick = { focusManager.clearFocus() },
                 properties = MapProperties(
                     mapType = MapType.HYBRID,
                     isMyLocationEnabled = false

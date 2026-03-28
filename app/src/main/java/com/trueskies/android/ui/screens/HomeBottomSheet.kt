@@ -14,6 +14,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
@@ -33,7 +39,7 @@ import com.trueskies.android.ui.viewmodels.SearchViewModel
  * Matches iOS PersonalFlightsPanel: collapsed shows search + flights,
  * expanded fills most of the screen.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MyFlightsSheetContent(
     onFlightClick: (String) -> Unit,
@@ -44,13 +50,28 @@ fun MyFlightsSheetContent(
     val flightsState by flightsViewModel.uiState.collectAsStateWithLifecycle()
     val searchState by searchViewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
-    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.60f).dp
+    val isImeVisible = WindowInsets.isImeVisible
+    val maxSheetHeight = if (isImeVisible) {
+        (LocalConfiguration.current.screenHeightDp * 0.90f).dp
+    } else {
+        (LocalConfiguration.current.screenHeightDp * 0.60f).dp
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(max = maxSheetHeight)
             .background(TrueSkiesColors.SurfaceSecondary)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) {
+                            focusManager.clearFocus()
+                        }
+                    }
+                }
+            }
     ) {
         Spacer(modifier = Modifier.height(TrueSkiesSpacing.sm))
 
