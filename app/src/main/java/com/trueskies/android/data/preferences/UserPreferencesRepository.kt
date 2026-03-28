@@ -25,6 +25,8 @@ class UserPreferencesRepository @Inject constructor(
         val STATUS_CHANGE_ALERTS     = booleanPreferencesKey("status_change_alerts")
         val USE_IMPERIAL_UNITS       = booleanPreferencesKey("use_imperial_units")
         val USE_24_HOUR_TIME         = booleanPreferencesKey("use_24_hour_time")
+        val NERVOUS_FLYER_ENABLED    = booleanPreferencesKey("nervous_flyer_enabled")
+        val SHARE_DIAGNOSTICS        = booleanPreferencesKey("share_diagnostics")
     }
 
     val notificationsEnabled: Flow<Boolean> =
@@ -44,6 +46,12 @@ class UserPreferencesRepository @Inject constructor(
 
     val use24HourTime: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.USE_24_HOUR_TIME] ?: true }
+
+    val nervousFlyerEnabled: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.NERVOUS_FLYER_ENABLED] ?: false }
+
+    val shareDiagnostics: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.SHARE_DIAGNOSTICS] ?: true }
 
     suspend fun setNotificationsEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.NOTIFICATIONS_ENABLED] = enabled }
@@ -67,5 +75,13 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setUse24HourTime(use24h: Boolean) {
         context.dataStore.edit { it[Keys.USE_24_HOUR_TIME] = use24h }
+    }
+
+    suspend fun setNervousFlyerEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.NERVOUS_FLYER_ENABLED] = enabled }
+    }
+
+    suspend fun setShareDiagnostics(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SHARE_DIAGNOSTICS] = enabled }
     }
 }

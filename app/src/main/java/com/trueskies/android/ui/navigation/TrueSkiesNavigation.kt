@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
@@ -47,7 +48,7 @@ fun TrueSkiesNavHost() {
         bottomBar = {
             if (isTabScreen) {
                 NavigationBar(
-                    containerColor = TrueSkiesColors.SurfaceSecondary,
+                    containerColor = Color(0xFF1C1C1E),
                     tonalElevation = 0.dp
                 ) {
                     MainTab.entries.forEach { tab ->
@@ -89,7 +90,7 @@ fun TrueSkiesNavHost() {
                 }
             }
         },
-        containerColor = TrueSkiesColors.SurfacePrimary
+        containerColor = TrueSkiesColors.GradientDarkStart
     ) { innerPadding ->
         // Only apply bottom padding — content extends behind status bar (edge-to-edge)
         Box(
@@ -118,7 +119,10 @@ fun TrueSkiesNavHost() {
                 }
                 composable(MainTab.FLIGHT_LOG.route) {
                     FlightLogScreen(
-                        onSettingsClick = { navController.navigate("settings") }
+                        onSettingsClick = { navController.navigate("settings") },
+                        onFlightClick = { flightId ->
+                            navController.navigate("flight/$flightId")
+                        }
                     )
                 }
                 composable("settings") {

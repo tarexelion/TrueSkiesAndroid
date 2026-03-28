@@ -38,6 +38,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.trueskies.android.domain.models.Flight
 import com.trueskies.android.domain.models.FlightStatus
+import com.trueskies.android.domain.models.WeatherInfo
 import com.trueskies.android.ui.components.FlightStatusBadge
 import com.trueskies.android.ui.components.LiquidGlassCard
 import com.trueskies.android.ui.theme.*
@@ -59,53 +60,73 @@ fun FlightDetailScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(TrueSkiesColors.SurfacePrimary)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF1C1C1E),  // iOS systemGray6 dark
+                        Color(0xFF2C2C2E),  // iOS systemGray5 dark
+                        Color(0xFF1C1C1E)
+                    )
+                )
+            )
             .statusBarsPadding()
     ) {
-        TopAppBar(
-            title = {
-                Text(
-                    text = uiState.flight?.displayFlightNumber ?: "Flight Details",
-                    style = TrueSkiesTypography.headlineMedium,
-                    color = TrueSkiesColors.TextPrimary
+        // ── iOS-style header: centered "Flight Details" + Share capsule ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = TrueSkiesSpacing.xs, vertical = TrueSkiesSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = TrueSkiesColors.AccentBlue
                 )
-            },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = TrueSkiesColors.AccentBlue
+            }
+
+            // Center title
+            Text(
+                text = "Flight Details",
+                style = TrueSkiesTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = TrueSkiesColors.TextPrimary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f)
+            )
+
+            // Actions row
+            IconButton(onClick = { viewModel.addToPersonalFlights() }) {
+                Icon(
+                    imageVector = if (uiState.isAddedToPersonal) Icons.Default.Check else Icons.Default.Add,
+                    contentDescription = if (uiState.isAddedToPersonal) "Tracking" else "Track Flight",
+                    tint = if (uiState.isAddedToPersonal) TrueSkiesColors.Success else TrueSkiesColors.AccentBlue
+                )
+            }
+            IconButton(onClick = { viewModel.refresh() }) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                    tint = TrueSkiesColors.AccentBlue
+                )
+            }
+            uiState.flight?.let {
+                // Share capsule button (matches iOS)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(TrueSkiesCornerRadius.pill))
+                        .background(TrueSkiesColors.AccentBlue.copy(alpha = 0.15f))
+                        .clickable { showShareSheet = true }
+                        .padding(horizontal = TrueSkiesSpacing.sm, vertical = TrueSkiesSpacing.xxs)
+                ) {
+                    Text(
+                        text = "Share",
+                        style = TrueSkiesTypography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = TrueSkiesColors.AccentBlue
                     )
                 }
-            },
-            actions = {
-                uiState.flight?.let {
-                    IconButton(onClick = { showShareSheet = true }) {
-                        Icon(
-                            Icons.Default.Share,
-                            contentDescription = "Share",
-                            tint = TrueSkiesColors.AccentBlue
-                        )
-                    }
-                }
-                IconButton(onClick = { viewModel.addToPersonalFlights() }) {
-                    Icon(
-                        imageVector = if (uiState.isAddedToPersonal) Icons.Default.Check else Icons.Default.Add,
-                        contentDescription = if (uiState.isAddedToPersonal) "Tracking" else "Track Flight",
-                        tint = if (uiState.isAddedToPersonal) TrueSkiesColors.Success else TrueSkiesColors.AccentBlue
-                    )
-                }
-                IconButton(onClick = { viewModel.refresh() }) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "Refresh",
-                        tint = TrueSkiesColors.AccentBlue
-                    )
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = TrueSkiesColors.SurfacePrimary)
-        )
+            }
+        }
 
         if (showShareSheet && uiState.flight != null) {
             ShareBottomSheet(
@@ -179,18 +200,15 @@ fun FlightDetailScreen(
 
                     Spacer(Modifier.height(TrueSkiesSpacing.sm))
 
-                    // ── Weather Placeholder Card ──
-                    WeatherPlaceholderCard(flight)
-
-                    Spacer(Modifier.height(TrueSkiesSpacing.md))
-
-                    // ── Notes Card ──
-                    NotesCard(
-                        notes = uiState.notes,
-                        onUpdateNotes = { viewModel.updateNotes(it) }
+                    // ── Weather Card ──
+                    ArrivalWeatherCard(
+                        flight = flight,
+                        weather = uiState.arrivalWeather,
+                        isLoading = uiState.weatherLoading,
+                        error = uiState.weatherError
                     )
 
-                    Spacer(Modifier.height(TrueSkiesSpacing.sm))
+                    Spacer(Modifier.height(TrueSkiesSpacing.md))
 
                     // ── Airline Info Card ──
                     AirlineInfoCard(flight)
@@ -231,38 +249,64 @@ fun FlightDetailScreen(
 private fun StatusAirlineCard(flight: Flight) {
     LiquidGlassCard {
         Column(modifier = Modifier.padding(TrueSkiesSpacing.md)) {
+            // Row 1: Flight# + Route + Status badge (matches iOS)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = flight.displayFlightNumber,
-                        style = AviationTypography.flightNumber,
-                        color = TrueSkiesColors.TextPrimary
-                    )
-                    flight.airlineName?.let {
-                        Text(it, style = TrueSkiesTypography.bodyMedium, color = TrueSkiesColors.TextSecondary)
-                    }
-                    flight.aircraftRegistration?.let {
-                        Text(it, style = TrueSkiesTypography.bodySmall, color = TrueSkiesColors.TextTertiary)
-                    }
-                }
+                Text(
+                    text = flight.displayFlightNumber,
+                    style = AviationTypography.flightNumber,
+                    color = TrueSkiesColors.TextPrimary
+                )
+                Spacer(Modifier.width(TrueSkiesSpacing.sm))
+                Text(
+                    text = "${flight.originCode}",
+                    style = TrueSkiesTypography.titleMedium.copy(fontWeight = FontWeight.Medium),
+                    color = TrueSkiesColors.TextSecondary
+                )
+                Text(
+                    text = " → ",
+                    style = TrueSkiesTypography.titleMedium,
+                    color = TrueSkiesColors.AccentBlue
+                )
+                Text(
+                    text = "${flight.destinationCode}",
+                    style = TrueSkiesTypography.titleMedium.copy(fontWeight = FontWeight.Medium),
+                    color = TrueSkiesColors.TextSecondary
+                )
+                Spacer(Modifier.weight(1f))
                 FlightStatusBadge(status = flight.status)
             }
-            flight.aircraftType?.let { type ->
-                Spacer(Modifier.height(TrueSkiesSpacing.sm))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.Flight,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = TrueSkiesColors.TextMuted
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(type, style = TrueSkiesTypography.bodySmall, color = TrueSkiesColors.TextTertiary)
+
+            // Row 2: Date · Aircraft · Registration · Duration · Progress
+            Spacer(Modifier.height(TrueSkiesSpacing.xxs))
+            val details = buildList {
+                val depTime = flight.bestDepartureTime
+                if (depTime != null) {
+                    try {
+                        val zdt = ZonedDateTime.parse(depTime)
+                        add(zdt.format(DateTimeFormatter.ofPattern("EEE, MMM d")).uppercase())
+                    } catch (_: Exception) {}
                 }
+                flight.aircraftType?.let { add(it) }
+                flight.aircraftRegistration?.let { add(it) }
+                flight.routeDuration?.let { mins ->
+                    val h = mins / 60; val m = mins % 60
+                    add(if (h > 0 && m > 0) "${h}h ${m}m flight" else if (h > 0) "${h}h flight" else "${m}m flight")
+                }
+                flight.progressPercent?.let { pct ->
+                    if (pct > 0 && flight.status.isActive) add("↗ $pct%")
+                }
+            }
+            if (details.isNotEmpty()) {
+                Text(
+                    text = details.joinToString(" · "),
+                    style = TrueSkiesTypography.bodySmall,
+                    color = TrueSkiesColors.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -441,7 +485,8 @@ private fun DetailFlightCard(flight: Flight) {
                 terminal = flight.departureTerminal,
                 delay = flight.departureDelay,
                 isDeparture = true,
-                baggageCarousel = null
+                baggageCarousel = null,
+                timezone = flight.originTimezone
             )
 
             // Separator with duration + distance + progress
@@ -458,7 +503,8 @@ private fun DetailFlightCard(flight: Flight) {
                 terminal = flight.arrivalTerminal,
                 delay = flight.arrivalDelay,
                 isDeparture = false,
-                baggageCarousel = flight.arrivalBaggage
+                baggageCarousel = flight.arrivalBaggage,
+                timezone = flight.destinationTimezone
             )
         }
     }
@@ -475,7 +521,8 @@ private fun EndpointSection(
     terminal: String?,
     delay: Int?,
     isDeparture: Boolean,
-    baggageCarousel: String?
+    baggageCarousel: String?,
+    timezone: String? = null
 ) {
     // Section label
     val labelAlignment = if (isDeparture) Alignment.Start else Alignment.End
@@ -504,7 +551,7 @@ private fun EndpointSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (isDeparture) {
-                SplitFlapTime(formatTimeShort(time))
+                SplitFlapTime(formatTimeShort(time, timezone))
                 Spacer(Modifier.width(TrueSkiesSpacing.sm))
                 AirportInlineDisplay(code = airportCode, city = city, alignEnd = false)
                 Spacer(Modifier.weight(1f))
@@ -512,7 +559,7 @@ private fun EndpointSection(
                 Spacer(Modifier.weight(1f))
                 AirportInlineDisplay(code = airportCode, city = city, alignEnd = true)
                 Spacer(Modifier.width(TrueSkiesSpacing.sm))
-                SplitFlapTime(formatTimeShort(time))
+                SplitFlapTime(formatTimeShort(time, timezone))
             }
         }
 
@@ -524,13 +571,13 @@ private fun EndpointSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (isDeparture) {
-                FlightStatusRow(delay = delay, scheduledTime = scheduledTime)
+                FlightStatusRow(delay = delay, scheduledTime = scheduledTime, timezone = timezone)
                 Spacer(Modifier.weight(1f))
                 GateChip(gate = gate, terminal = terminal)
             } else {
                 GateChip(gate = gate, terminal = terminal)
                 Spacer(Modifier.weight(1f))
-                FlightStatusRow(delay = delay, scheduledTime = scheduledTime)
+                FlightStatusRow(delay = delay, scheduledTime = scheduledTime, timezone = timezone)
             }
         }
 
@@ -625,9 +672,9 @@ private fun AirportInlineDisplay(code: String, city: String?, alignEnd: Boolean)
     }
 }
 
-/** ON TIME / DELAYED / EARLY status row — matches iOS `statusDisplay` */
+/** ON TIME / DELAYED status row — matches iOS `statusDisplay` */
 @Composable
-private fun FlightStatusRow(delay: Int?, scheduledTime: String?) {
+private fun FlightStatusRow(delay: Int?, scheduledTime: String?, timezone: String? = null) {
     when {
         delay != null && delay > 0 -> {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -645,7 +692,7 @@ private fun FlightStatusRow(delay: Int?, scheduledTime: String?) {
                 if (scheduledTime != null) {
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = formatTimeShort(scheduledTime),
+                        text = formatTimeShort(scheduledTime, timezone),
                         style = TrueSkiesTypography.labelSmall,
                         color = TrueSkiesColors.TextMuted,
                         textDecoration = TextDecoration.LineThrough
@@ -655,8 +702,8 @@ private fun FlightStatusRow(delay: Int?, scheduledTime: String?) {
         }
         delay != null && delay < 0 -> {
             Text(
-                text = "EARLY",
-                style = TrueSkiesTypography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                text = "ON TIME",
+                style = TrueSkiesTypography.labelSmall.copy(fontWeight = FontWeight.Medium),
                 color = TrueSkiesColors.StatusOnTime
             )
         }
@@ -1052,10 +1099,16 @@ private fun InfoItem(label: String, value: String) {
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-private fun formatTimeShort(isoString: String?): String {
+private fun formatTimeShort(isoString: String?, timezone: String? = null): String {
     if (isoString == null) return "--:--"
     return try {
-        ZonedDateTime.parse(isoString).format(DateTimeFormatter.ofPattern("HH:mm"))
+        val zdt = ZonedDateTime.parse(isoString)
+        val localZdt = if (timezone != null) {
+            zdt.withZoneSameInstant(java.time.ZoneId.of(timezone))
+        } else {
+            zdt
+        }
+        localZdt.format(DateTimeFormatter.ofPattern("HH:mm"))
     } catch (e: Exception) {
         try {
             val s = isoString.substringBefore("Z").substringBefore("+")
@@ -1228,11 +1281,41 @@ private fun SeatInputDialog(
 }
 
 // ─────────────────────────────────────────────────────────────
-// Weather Placeholder Card  (iOS: ArrivalWeatherInfoCard)
+// Arrival Weather Card  (iOS: ArrivalWeatherInfoCard)
 // ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun WeatherPlaceholderCard(flight: Flight) {
+private fun ArrivalWeatherCard(
+    flight: Flight,
+    weather: WeatherInfo?,
+    isLoading: Boolean,
+    error: String?
+) {
+    // Determine icon tint based on conditions
+    val iconTint = when {
+        weather == null -> TrueSkiesColors.AccentCyan
+        weather.conditions.contains("Thunder", ignoreCase = true) ||
+        weather.conditions.contains("Rain", ignoreCase = true) ||
+        weather.conditions.contains("Freezing", ignoreCase = true) -> TrueSkiesColors.Warning
+        weather.conditions.contains("Clear", ignoreCase = true) ||
+        weather.conditions.contains("Sunny", ignoreCase = true) -> Color(0xFFFACC15) // yellow
+        else -> TrueSkiesColors.AccentCyan
+    }
+
+    // Choose icon based on conditions
+    val weatherIcon = when {
+        weather == null -> Icons.Default.WbSunny
+        weather.conditions.contains("Cloud", ignoreCase = true) ||
+        weather.conditions.contains("Overcast", ignoreCase = true) -> Icons.Default.Cloud
+        weather.conditions.contains("Rain", ignoreCase = true) ||
+        weather.conditions.contains("Drizzle", ignoreCase = true) ||
+        weather.conditions.contains("Shower", ignoreCase = true) -> Icons.Default.WaterDrop
+        weather.conditions.contains("Snow", ignoreCase = true) -> Icons.Default.AcUnit
+        weather.conditions.contains("Thunder", ignoreCase = true) -> Icons.Default.Bolt
+        weather.conditions.contains("Fog", ignoreCase = true) -> Icons.Default.Cloud
+        else -> Icons.Default.WbSunny
+    }
+
     LiquidGlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -1245,13 +1328,13 @@ private fun WeatherPlaceholderCard(flight: Flight) {
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(TrueSkiesColors.AccentCyan.copy(alpha = 0.15f)),
+                    .background(iconTint.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.WbSunny,
+                    weatherIcon,
                     contentDescription = null,
-                    tint = TrueSkiesColors.AccentCyan,
+                    tint = iconTint,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -1265,22 +1348,33 @@ private fun WeatherPlaceholderCard(flight: Flight) {
                     color = TrueSkiesColors.TextPrimary
                 )
                 Text(
-                    text = "${flight.destinationCode} · Unable to load",
+                    text = when {
+                        isLoading -> "${flight.destinationCode} · Loading..."
+                        weather != null -> {
+                            val wind = if (weather.windSpeed != null) {
+                                val dir = weather.windDirection?.let { "$it " } ?: ""
+                                " · ${dir}${weather.windSpeed} km/h"
+                            } else ""
+                            "${flight.destinationCode} · ${weather.conditions}$wind"
+                        }
+                        else -> "${flight.destinationCode} · ${error ?: "Unable to load"}"
+                    },
                     style = TrueSkiesTypography.bodySmall,
                     color = TrueSkiesColors.TextSecondary
                 )
             }
 
+            // Temperature badge
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(TrueSkiesCornerRadius.pill))
-                    .background(TrueSkiesColors.AccentCyan.copy(alpha = 0.15f))
+                    .background(iconTint.copy(alpha = 0.15f))
                     .padding(horizontal = TrueSkiesSpacing.sm, vertical = TrueSkiesSpacing.xxs)
             ) {
                 Text(
-                    text = "—",
+                    text = if (weather != null) "${weather.temperature}°" else "—",
                     style = TrueSkiesTypography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    color = TrueSkiesColors.AccentCyan
+                    color = iconTint
                 )
             }
         }

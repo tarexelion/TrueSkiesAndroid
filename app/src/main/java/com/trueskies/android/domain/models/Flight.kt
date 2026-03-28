@@ -1,11 +1,8 @@
 package com.trueskies.android.domain.models
 
 import com.trueskies.android.data.remote.models.BackendFlight
-import java.time.Instant
-import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -17,6 +14,7 @@ data class Flight(
     val flightNumber: String,
     val displayFlightNumber: String,
     val callsign: String? = null,
+    val icao24: String? = null,
     // Airline
     val airlineName: String? = null,
     val airlineIata: String? = null,
@@ -25,6 +23,7 @@ data class Flight(
     val aircraftRegistration: String? = null,
     val aircraftType: String? = null,
     val aircraftIcao: String? = null,
+    val aircraftIata: String? = null,
     // Origin
     val originCode: String,
     val originName: String? = null,
@@ -47,6 +46,7 @@ data class Flight(
     val altitude: Double? = null,
     val heading: Double? = null,
     val speed: Double? = null,
+    val verticalRate: Double? = null,
     val positionTimestamp: String? = null,
     // Timing
     val scheduledDeparture: String? = null,
@@ -55,6 +55,9 @@ data class Flight(
     val scheduledArrival: String? = null,
     val estimatedArrival: String? = null,
     val actualArrival: String? = null,
+    val actualWheelsOff: String? = null,
+    val actualWheelsOn: String? = null,
+    val eta: String? = null,
     // Schedule (gate/terminal info)
     val departureGate: String? = null,
     val departureTerminal: String? = null,
@@ -70,18 +73,48 @@ data class Flight(
     // Flags
     val diverted: Boolean = false,
     val cancelled: Boolean = false,
+    val blocked: Boolean = false,
+    // Diversion details (iOS)
+    val divertedToAirportCode: String? = null,
+    val divertedToAirportName: String? = null,
+    val diversionReason: String? = null,
+    val diversionTimestamp: String? = null,
+    val diversionEstimatedArrival: String? = null,
+    // Marketing carrier / codeshare (iOS)
+    val marketingFlightNumber: String? = null,
+    val marketingAirlineCode: String? = null,
+    val marketingAirlineIata: String? = null,
+    val marketingAirlineIcao: String? = null,
+    val marketingAirlineName: String? = null,
+    // Foresight factors (iOS)
+    val foresightFactorsDeparture: List<String>? = null,
+    val foresightFactorsArrival: List<String>? = null,
     // Route
     val routeDistance: Double? = null,
     val routeDuration: Int? = null,
     // Track
-    val trackPoints: List<TrackPoint> = emptyList()
+    val trackPoints: List<TrackPoint> = emptyList(),
+    // Data source
+    val dataSource: String? = null,
+    val onGround: Boolean? = null
 ) {
-    /** Computed flight status from raw backend string */
+    /** Computed flight status from raw backend string, with fallbacks */
     val status: FlightStatus
         get() {
             if (cancelled) return FlightStatus.CANCELLED
             if (diverted) return FlightStatus.DIVERTED
-            return FlightStatus.fromBackendStatus(rawStatus)
+            val fromRaw = FlightStatus.fromBackendStatus(rawStatus)
+            if (fromRaw != FlightStatus.UNKNOWN) return fromRaw
+            // Try detailedStatus as fallback
+            val fromDetailed = FlightStatus.fromBackendStatus(detailedStatus)
+            if (fromDetailed != FlightStatus.UNKNOWN) return fromDetailed
+            // Infer from position/timing data
+            if (latitude != null && longitude != null && onGround != true) return FlightStatus.EN_ROUTE
+            if (actualArrival != null) return FlightStatus.ARRIVED
+            if (actualDeparture != null && latitude != null) return FlightStatus.EN_ROUTE
+            if (actualDeparture != null) return FlightStatus.DEPARTED
+            if (scheduledDeparture != null) return FlightStatus.SCHEDULED
+            return FlightStatus.UNKNOWN
         }
 
     /** Best departure time: actual > estimated > scheduled */
@@ -103,6 +136,34 @@ data class Flight(
     /** Route display string */
     val routeDisplay: String
         get() = "$originCode → $destinationCode"
+
+    /** Whether this is a codeshare flight (iOS isCodeshare) */
+    val isCodeshare: Boolean
+        get() = marketingFlightNumber != null && marketingFlightNumber != flightNumber
+
+    /** Current relevant gate (iOS currentRelevantGate) */
+    val currentRelevantGate: String?
+        get() = when {
+            status.isCompleted || status == FlightStatus.ARRIVED || status == FlightStatus.LANDED ->
+                arrivalGate
+            else -> departureGate
+        }
+
+    /** Current relevant terminal (iOS currentRelevantTerminal) */
+    val currentRelevantTerminal: String?
+        get() = when {
+            status.isCompleted || status == FlightStatus.ARRIVED || status == FlightStatus.LANDED ->
+                arrivalTerminal
+            else -> departureTerminal
+        }
+
+    /** Whether flight is live (has recent position data) */
+    val isLive: Boolean
+        get() = hasPosition && status.isActive
+
+    /** Whether flight is grounded */
+    val isGrounded: Boolean
+        get() = onGround == true || status == FlightStatus.ARRIVED || status == FlightStatus.LANDED
 
     companion object {
         // Thread-safe confirmed rank cache — prevents status regression
@@ -135,6 +196,7 @@ data class Flight(
                 aircraftRegistration = bf.aircraft?.registration,
                 aircraftType = bf.aircraft?.type,
                 aircraftIcao = bf.aircraft?.icao,
+                aircraftIata = bf.aircraft?.iata,
                 originCode = bf.origin?.resolvedCode ?: "???",
                 originName = bf.origin?.name,
                 originCity = bf.origin?.city,
@@ -161,6 +223,8 @@ data class Flight(
                 scheduledArrival = bf.arrival?.scheduled ?: bf.schedule?.arrival?.scheduled,
                 estimatedArrival = bf.arrival?.estimated ?: bf.schedule?.arrival?.estimated,
                 actualArrival = bf.arrival?.actual ?: bf.schedule?.arrival?.actual,
+                actualWheelsOff = bf.actualWheelsOff,
+                actualWheelsOn = bf.actualWheelsOn,
                 departureGate = bf.schedule?.departure?.gate,
                 departureTerminal = bf.schedule?.departure?.terminal,
                 arrivalGate = bf.schedule?.arrival?.gate,
@@ -173,6 +237,16 @@ data class Flight(
                 arrivalDelay = bf.resolvedArrivalDelay,
                 diverted = bf.diverted == true,
                 cancelled = bf.cancelled == true,
+                blocked = bf.blocked == true,
+                divertedToAirportCode = bf.divertedToAirport?.resolvedCode,
+                divertedToAirportName = bf.divertedToAirport?.name,
+                marketingFlightNumber = bf.marketingCarrier?.flightNumber,
+                marketingAirlineCode = bf.marketingCarrier?.airlineCode,
+                marketingAirlineIata = bf.marketingCarrier?.iata,
+                marketingAirlineIcao = bf.marketingCarrier?.icao,
+                marketingAirlineName = bf.marketingCarrier?.name,
+                foresightFactorsDeparture = bf.foresightFactorsDeparture,
+                foresightFactorsArrival = bf.foresightFactorsArrival,
                 routeDistance = bf.route?.distance,
                 routeDuration = bf.route?.duration,
                 trackPoints = bf.trackPoints?.map {

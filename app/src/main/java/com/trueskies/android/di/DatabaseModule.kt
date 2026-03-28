@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import com.trueskies.android.data.local.TrueSkiesDatabase
 import com.trueskies.android.data.local.dao.FlightDao
+import com.trueskies.android.data.local.dao.FlightEventDao
 import com.trueskies.android.data.local.dao.PersonalFlightDao
+import com.trueskies.android.data.local.dao.SharedFlightDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,5 +38,15 @@ object DatabaseModule {
     @Provides
     fun providePersonalFlightDao(database: TrueSkiesDatabase): PersonalFlightDao {
         return database.personalFlightDao()
+    }
+
+    @Provides
+    fun provideSharedFlightDao(database: TrueSkiesDatabase): SharedFlightDao {
+        return database.sharedFlightDao()
+    }
+
+    @Provides
+    fun provideFlightEventDao(database: TrueSkiesDatabase): FlightEventDao {
+        return database.flightEventDao()
     }
 }

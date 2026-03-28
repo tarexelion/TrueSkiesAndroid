@@ -1,10 +1,13 @@
 package com.trueskies.android.ui.viewmodels
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.trueskies.android.data.remote.api.OpenMeteoApi
 import com.trueskies.android.data.repository.FlightRepository
 import com.trueskies.android.domain.models.Flight
+import com.trueskies.android.domain.models.WeatherInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class FlightDetailViewModel @Inject constructor(
     private val repository: FlightRepository,
+    private val openMeteoApi: OpenMeteoApi,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -24,7 +28,10 @@ class FlightDetailViewModel @Inject constructor(
         val error: String? = null,
         val isAddedToPersonal: Boolean = false,
         val seat: String = "",
-        val notes: String = ""
+        val notes: String = "",
+        val arrivalWeather: WeatherInfo? = null,
+        val weatherLoading: Boolean = false,
+        val weatherError: String? = null
     )
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -60,6 +67,7 @@ class FlightDetailViewModel @Inject constructor(
                         flight = flight,
                         isLoading = false
                     )
+                    loadArrivalWeather(flight)
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
@@ -68,6 +76,53 @@ class FlightDetailViewModel @Inject constructor(
                     )
                 }
             )
+        }
+    }
+
+    private fun loadArrivalWeather(flight: Flight) {
+        val lat = flight.destinationLat ?: return
+        val lon = flight.destinationLon ?: return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(weatherLoading = true, weatherError = null)
+            try {
+                val response = openMeteoApi.getCurrentWeather(latitude = lat, longitude = lon)
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    val current = body?.current
+                    if (current != null) {
+                        val weather = WeatherInfo(
+                            airportCode = flight.destinationCode,
+                            temperature = current.temperature?.toInt() ?: 0,
+                            feelsLike = current.feelsLike?.toInt() ?: 0,
+                            conditions = WeatherInfo.conditionsFromWmoCode(current.weatherCode),
+                            windSpeed = current.windSpeed?.toInt(),
+                            windDirection = WeatherInfo.cardinalDirection(current.windDirection),
+                            humidity = current.humidity
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            arrivalWeather = weather,
+                            weatherLoading = false
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            weatherLoading = false,
+                            weatherError = "No weather data"
+                        )
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        weatherLoading = false,
+                        weatherError = "Weather unavailable"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("FlightDetailVM", "Weather fetch failed", e)
+                _uiState.value = _uiState.value.copy(
+                    weatherLoading = false,
+                    weatherError = "Unable to load"
+                )
+            }
         }
     }
 

@@ -19,7 +19,9 @@ class SettingsViewModel @Inject constructor(
         val gateChangeAlerts: Boolean = true,
         val statusChangeAlerts: Boolean = true,
         val useImperialUnits: Boolean = true,
-        val use24HourTime: Boolean = true
+        val use24HourTime: Boolean = true,
+        val nervousFlyerEnabled: Boolean = false,
+        val shareDiagnostics: Boolean = true
     )
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -28,7 +30,9 @@ class SettingsViewModel @Inject constructor(
         prefs.gateChangeAlerts,
         prefs.statusChangeAlerts,
         prefs.useImperialUnits,
-        prefs.use24HourTime
+        prefs.use24HourTime,
+        prefs.nervousFlyerEnabled,
+        prefs.shareDiagnostics
     ) { values ->
         SettingsUiState(
             notificationsEnabled  = values[0] as Boolean,
@@ -36,7 +40,9 @@ class SettingsViewModel @Inject constructor(
             gateChangeAlerts      = values[2] as Boolean,
             statusChangeAlerts    = values[3] as Boolean,
             useImperialUnits      = values[4] as Boolean,
-            use24HourTime         = values[5] as Boolean
+            use24HourTime         = values[5] as Boolean,
+            nervousFlyerEnabled   = values[6] as Boolean,
+            shareDiagnostics      = values[7] as Boolean
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -46,4 +52,6 @@ class SettingsViewModel @Inject constructor(
     fun setStatusChangeAlerts(v: Boolean)   = viewModelScope.launch { prefs.setStatusChangeAlerts(v) }
     fun setUseImperialUnits(v: Boolean)     = viewModelScope.launch { prefs.setUseImperialUnits(v) }
     fun setUse24HourTime(v: Boolean)        = viewModelScope.launch { prefs.setUse24HourTime(v) }
+    fun setNervousFlyerEnabled(v: Boolean)  = viewModelScope.launch { prefs.setNervousFlyerEnabled(v) }
+    fun setShareDiagnostics(v: Boolean)     = viewModelScope.launch { prefs.setShareDiagnostics(v) }
 }

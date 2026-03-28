@@ -10,12 +10,13 @@ import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.foundation.Image
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -24,11 +25,12 @@ import com.trueskies.android.domain.models.Flight
 import com.trueskies.android.domain.models.FlightStatus
 import com.trueskies.android.domain.models.PersonalFlight
 import com.trueskies.android.ui.theme.*
+import com.trueskies.android.util.rememberAirlineLogo
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Personal flight card — matches iOS PersonalFlightCard horizontal layout exactly.
+ * Personal flight card — matches iOS PersonalFlightCard horizontal layout.
  *
  * Structure:
  *  [LEFT ~96dp: duration/state] | [RIGHT flexible]
@@ -76,7 +78,7 @@ fun FlightCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     AirlineAvatar(
-                        iata = flight.airlineIata,
+                        iata = personalFlight.logoAirlineCode ?: flight.airlineIata,
                         name = flight.airlineName
                     )
                     Spacer(Modifier.width(TrueSkiesSpacing.xs))
@@ -86,6 +88,22 @@ fun FlightCard(
                         color = TrueSkiesColors.TextSecondary,
                         maxLines = 1
                     )
+                    if (flight.isCodeshare) {
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "·",
+                            style = TrueSkiesTypography.bodySmall,
+                            color = TrueSkiesColors.TextMuted
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = flight.marketingAirlineName ?: "",
+                            style = TrueSkiesTypography.bodySmall,
+                            color = TrueSkiesColors.TextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Spacer(Modifier.weight(1f))
                     Text(
                         text = statusText(flight, status),
@@ -112,17 +130,27 @@ fun FlightCard(
                 ) {
                     AirportTimeChip(
                         code = flight.originCode,
-                        time = formatTime(flight.bestDepartureTime),
+                        time = formatTime(flight.bestDepartureTime, flight.originTimezone),
                         isDeparture = true,
                         delay = flight.departureDelay,
                         scheduledTime = flight.scheduledDeparture
                     )
                     AirportTimeChip(
                         code = flight.destinationCode,
-                        time = formatTime(flight.bestArrivalTime),
+                        time = formatTime(flight.bestArrivalTime, flight.destinationTimezone),
                         isDeparture = false,
                         delay = flight.arrivalDelay,
                         scheduledTime = flight.scheduledArrival
+                    )
+                }
+
+                // Diversion info (iOS)
+                if (flight.diverted && flight.divertedToAirportCode != null) {
+                    Text(
+                        text = "Diverted to ${flight.divertedToAirportName ?: flight.divertedToAirportCode}",
+                        style = TrueSkiesTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = TrueSkiesColors.StatusDiverted,
+                        maxLines = 1
                     )
                 }
             }
@@ -147,6 +175,16 @@ private fun LeftStateColumn(flight: Flight, status: FlightStatus) {
         }
         status == FlightStatus.BOARDING -> {
             BoardingPulse()
+        }
+        status == FlightStatus.DIVERTED -> {
+            Text(
+                text = "DIVERTED",
+                style = TrueSkiesTypography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                ),
+                color = TrueSkiesColors.StatusDiverted
+            )
         }
         status.isAirborne || status == FlightStatus.DEPARTED || status == FlightStatus.TAXIING_OUT -> {
             InFlightDisplay()
@@ -302,28 +340,42 @@ private fun InFlightDisplay() {
     }
 }
 
-// ── Airline initials avatar ──
+// ── Airline logo / initials avatar ──
 
 @Composable
 private fun AirlineAvatar(iata: String?, name: String?) {
-    val initials = when {
-        iata != null -> iata.take(2).uppercase()
-        name != null -> name.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }
-            .joinToString("").take(2)
-        else -> "?"
-    }
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(TrueSkiesColors.AccentBlue.copy(alpha = 0.15f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = initials,
-            style = TrueSkiesTypography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
-            color = TrueSkiesColors.AccentBlue
+    val logoBitmap = rememberAirlineLogo(name)
+
+    if (logoBitmap != null) {
+        Image(
+            bitmap = logoBitmap,
+            contentDescription = name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .height(20.dp)
+                .widthIn(max = 64.dp)
         )
+    } else {
+        // Fallback: initials circle
+        val initials = when {
+            iata != null -> iata.take(2).uppercase()
+            name != null -> name.split(" ").take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }
+                .joinToString("").take(2)
+            else -> "?"
+        }
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(TrueSkiesColors.AccentBlue.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = initials,
+                style = TrueSkiesTypography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                color = TrueSkiesColors.AccentBlue
+            )
+        }
     }
 }
 
@@ -337,7 +389,6 @@ private fun AirportTimeChip(
     delay: Int?,
     scheduledTime: String?
 ) {
-    val icon = if (isDeparture) "✈" else "🛬"
     val timeColor = when {
         delay != null && delay > 0 -> TrueSkiesColors.StatusDelayed
         else -> TrueSkiesColors.TextPrimary
@@ -348,7 +399,7 @@ private fun AirportTimeChip(
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Text(
-            text = if (isDeparture) "✈" else "✈",
+            text = "✈",
             fontSize = 12.sp,
             color = if (isDeparture) TrueSkiesColors.StatusOnTime else TrueSkiesColors.AccentCyan
         )
@@ -365,7 +416,7 @@ private fun AirportTimeChip(
     }
 }
 
-// ── Status text ──
+// ── Status text (matches iOS displayStatus) ──
 
 private fun statusText(flight: Flight, status: FlightStatus): String {
     return when (status) {
@@ -374,25 +425,34 @@ private fun statusText(flight: Flight, status: FlightStatus): String {
             if (arrTime != null) {
                 val zdt = parseIso(arrTime)
                 if (zdt != null) {
+                    val localZdt = if (flight.destinationTimezone != null) {
+                        zdt.withZoneSameInstant(java.time.ZoneId.of(flight.destinationTimezone))
+                    } else zdt
                     val fmt = DateTimeFormatter.ofPattern("MMM d, HH:mm")
-                    "Arrived ${zdt.format(fmt)}"
+                    "Arrived ${localZdt.format(fmt)}"
                 } else "Arrived"
             } else "Arrived"
         }
         FlightStatus.BOARDING -> "Now Boarding"
         FlightStatus.CANCELLED -> "Cancelled"
-        FlightStatus.DIVERTED -> "Diverted"
-        FlightStatus.SCHEDULED -> {
+        FlightStatus.DIVERTED -> {
+            if (flight.divertedToAirportCode != null) "Diverted to ${flight.divertedToAirportCode}"
+            else "Diverted"
+        }
+        FlightStatus.SCHEDULED, FlightStatus.FILING -> {
             val delay = flight.departureDelay ?: 0
             if (delay > 0) "Delayed +${formatDelayMins(delay)}" else "On Time"
         }
-        FlightStatus.EN_ROUTE, FlightStatus.APPROACH -> {
+        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.APPROACH -> {
             val pct = flight.progressPercent
             if (pct != null && pct > 0) "En Route · $pct%" else "En Route"
         }
+        FlightStatus.CLIMB -> "Climbing"
+        FlightStatus.TAKEOFF -> "Takeoff"
+        FlightStatus.LANDING -> "Landing"
         FlightStatus.TAXIING_IN -> "Taxiing to Gate"
         FlightStatus.TAXIING_OUT -> "Taxiing Out"
-        FlightStatus.DEPARTED -> "Departed"
+        FlightStatus.DEPARTED -> "In Flight"
         else -> status.displayName
     }
 }
@@ -403,10 +463,11 @@ private fun statusTextColor(flight: Flight, status: FlightStatus): Color {
         FlightStatus.BOARDING -> TrueSkiesColors.StatusOnTime
         FlightStatus.CANCELLED -> TrueSkiesColors.StatusCancelled
         FlightStatus.DIVERTED -> TrueSkiesColors.StatusDiverted
-        FlightStatus.EN_ROUTE, FlightStatus.APPROACH,
+        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.APPROACH,
+        FlightStatus.CLIMB, FlightStatus.TAKEOFF, FlightStatus.LANDING,
         FlightStatus.DEPARTED, FlightStatus.TAXIING_OUT,
-        FlightStatus.TAXIING_IN -> TrueSkiesColors.AccentBlue
-        FlightStatus.SCHEDULED -> if ((flight.departureDelay ?: 0) > 0)
+        FlightStatus.TAXIING_IN -> TrueSkiesColors.StatusActive
+        FlightStatus.SCHEDULED, FlightStatus.FILING -> if ((flight.departureDelay ?: 0) > 0)
             TrueSkiesColors.StatusDelayed else TrueSkiesColors.StatusOnTime
         else -> TrueSkiesColors.TextSecondary
     }
@@ -419,7 +480,7 @@ private fun routeDescription(flight: Flight): String {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FlightRow — search result row (compact)
+// FlightRow — search result row (compact, legacy)
 // ─────────────────────────────────────────────────────────────
 
 @Composable
@@ -432,51 +493,315 @@ fun FlightRow(
         onClick = onClick,
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = TrueSkiesSpacing.md, vertical = TrueSkiesSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.md)
+            verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xxs)
         ) {
-            // Left: flight number + airline
-            Column(modifier = Modifier.weight(1f)) {
+            // Row 1: Flight number + Route + Status badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = flight.displayFlightNumber,
                     style = TrueSkiesTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = TrueSkiesColors.TextPrimary
                 )
-                flight.airlineName?.let {
+                Spacer(Modifier.width(TrueSkiesSpacing.sm))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = it,
-                        style = TrueSkiesTypography.bodySmall,
-                        color = TrueSkiesColors.TextTertiary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        flight.originCode,
+                        style = AviationTypography.airportCodeSmall.copy(fontSize = 14.sp),
+                        color = TrueSkiesColors.TextSecondary
+                    )
+                    Text(" → ", color = TrueSkiesColors.AccentBlue, fontSize = 13.sp)
+                    Text(
+                        flight.destinationCode,
+                        style = AviationTypography.airportCodeSmall.copy(fontSize = 14.sp),
+                        color = TrueSkiesColors.TextSecondary
                     )
                 }
+                Spacer(Modifier.weight(1f))
+                FlightStatusBadge(status = flight.status)
             }
 
-            // Centre: origin → dest + time
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(flight.originCode,
-                        style = AviationTypography.airportCodeSmall.copy(fontSize = 15.sp),
-                        color = TrueSkiesColors.TextPrimary)
-                    Text(" → ", color = TrueSkiesColors.AccentBlue, fontSize = 13.sp)
-                    Text(flight.destinationCode,
-                        style = AviationTypography.airportCodeSmall.copy(fontSize = 15.sp),
-                        color = TrueSkiesColors.TextPrimary)
+            // Row 2: Date · Aircraft · Registration · Duration · Progress
+            val details = buildList {
+                val dateStr = formatDate(flight.bestDepartureTime)
+                if (dateStr.isNotEmpty()) add(dateStr)
+                flight.aircraftType?.let { add(it) }
+                flight.aircraftRegistration?.let { add(it) }
+                flight.routeDuration?.let { mins ->
+                    val h = mins / 60; val m = mins % 60
+                    add(if (h > 0 && m > 0) "${h}h ${m}m flight" else if (h > 0) "${h}h flight" else "${m}m flight")
                 }
+                flight.progressPercent?.let { pct ->
+                    if (pct > 0 && flight.status.isActive) add("↗ $pct%")
+                }
+            }
+            if (details.isNotEmpty()) {
                 Text(
-                    text = formatTime(flight.bestDepartureTime),
+                    text = details.joinToString(" · "),
                     style = TrueSkiesTypography.bodySmall,
-                    color = TrueSkiesColors.TextSecondary
+                    color = TrueSkiesColors.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
 
-            // Right: status badge
-            FlightStatusBadge(status = flight.status)
+// ─────────────────────────────────────────────────────────────
+// SearchResultFlightCard — iOS-style Add Flight result card
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Matches iOS FlightSearchResultsView card layout:
+ * [Status indicator (72dp)] | [Airline + flight# + date]
+ *                           | [Route bold]
+ *                           | [Status text · Gate]
+ */
+@Composable
+fun SearchResultFlightCard(
+    flight: Flight,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val status = flight.status
+
+    LiquidGlassCard(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = TrueSkiesSpacing.md,
+                    end = TrueSkiesSpacing.xl,
+                    top = TrueSkiesSpacing.md,
+                    bottom = TrueSkiesSpacing.md
+                ),
+            horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // ── LEFT: Status indicator (fixed 72dp) ──
+            Box(
+                modifier = Modifier.width(72.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                SearchStatusIndicator(flight = flight, status = status)
+            }
+
+            // ── RIGHT: Flight details ──
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xxs)
+            ) {
+                // Row 1: Airline logo + flight number ... date
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AirlineAvatar(iata = flight.airlineIata, name = flight.airlineName)
+                    Spacer(Modifier.width(TrueSkiesSpacing.xs))
+                    Text(
+                        text = flight.displayFlightNumber,
+                        style = TrueSkiesTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = TrueSkiesColors.TextSecondary,
+                        maxLines = 1
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = formatDate(flight.bestDepartureTime),
+                        style = TrueSkiesTypography.bodySmall,
+                        color = TrueSkiesColors.TextMuted,
+                        maxLines = 1
+                    )
+                }
+
+                // Row 2: City → City route (bold)
+                Text(
+                    text = routeDescription(flight),
+                    style = TrueSkiesTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = TrueSkiesColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Row 3: Status text · Gate
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = searchStatusText(flight, status),
+                        style = TrueSkiesTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = searchStatusColor(status),
+                        maxLines = 1
+                    )
+                    val gate = flight.currentRelevantGate
+                    if (gate != null) {
+                        Text(
+                            text = "·",
+                            style = TrueSkiesTypography.bodySmall,
+                            color = TrueSkiesColors.TextMuted
+                        )
+                        Text(
+                            text = "Gate $gate",
+                            style = TrueSkiesTypography.bodySmall,
+                            color = TrueSkiesColors.TextMuted,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Search status indicator (left side of search result card) ──
+
+@Composable
+private fun SearchStatusIndicator(flight: Flight, status: FlightStatus) {
+    when {
+        // Active / live flights: pulsing dot + short label
+        status.isActive -> {
+            val pulse = rememberInfiniteTransition(label = "live-pulse")
+            val scale by pulse.animateFloat(
+                initialValue = 0.8f, targetValue = 1.4f,
+                animationSpec = infiniteRepeatable(
+                    tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse
+                ),
+                label = "pulseScale"
+            )
+            val alpha by pulse.animateFloat(
+                initialValue = 1f, targetValue = 0.3f,
+                animationSpec = infiniteRepeatable(
+                    tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse
+                ),
+                label = "pulseAlpha"
+            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(contentAlignment = Alignment.Center) {
+                    // Halo ring
+                    Box(
+                        modifier = Modifier
+                            .size((12 * scale).dp)
+                            .clip(CircleShape)
+                            .background(TrueSkiesColors.StatusOnTime.copy(alpha = alpha * 0.3f))
+                    )
+                    // Solid dot
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(TrueSkiesColors.StatusOnTime)
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = searchShortStatusLabel(flight, status),
+                    style = TrueSkiesTypography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        fontSize = 10.sp
+                    ),
+                    color = TrueSkiesColors.StatusOnTime
+                )
+            }
+        }
+        // Cancelled
+        status == FlightStatus.CANCELLED -> {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "✕",
+                    style = TrueSkiesTypography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = TrueSkiesColors.StatusCancelled
+                )
+            }
+        }
+        // Completed / arrived
+        status.isCompleted -> {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "✓",
+                    style = TrueSkiesTypography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = TrueSkiesColors.StatusOnTime
+                )
+            }
+        }
+        // Scheduled — show departure time
+        else -> {
+            val depTime = formatTime(flight.bestDepartureTime)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = depTime,
+                    style = TrueSkiesTypography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = TrueSkiesColors.TextPrimary
+                )
+            }
+        }
+    }
+}
+
+private fun searchShortStatusLabel(flight: Flight, status: FlightStatus): String {
+    return when (status) {
+        FlightStatus.BOARDING -> "BOARDING"
+        FlightStatus.TAXIING_OUT, FlightStatus.TAXIING_IN -> "TAXI"
+        FlightStatus.ARRIVED, FlightStatus.LANDED -> "LANDED"
+        else -> if (flight.isLive) "LIVE" else "ACTIVE"
+    }
+}
+
+private fun searchStatusText(flight: Flight, status: FlightStatus): String {
+    return when (status) {
+        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.CLIMB,
+        FlightStatus.APPROACH -> "En Route"
+        FlightStatus.BOARDING -> "Boarding"
+        FlightStatus.DEPARTED, FlightStatus.TAKEOFF, FlightStatus.TAXIING_OUT -> "In Flight"
+        FlightStatus.LANDING -> "Landing"
+        FlightStatus.TAXIING_IN -> "Taxiing to Gate"
+        FlightStatus.ARRIVED, FlightStatus.LANDED, FlightStatus.COMPLETED -> "Arrived"
+        FlightStatus.CANCELLED -> "Cancelled"
+        FlightStatus.DIVERTED -> "Diverted"
+        FlightStatus.SCHEDULED, FlightStatus.FILING -> {
+            val delay = flight.departureDelay ?: 0
+            if (delay > 0) "Delayed +${formatDelayMins(delay)}" else "On Time"
+        }
+        else -> status.displayName
+    }
+}
+
+private fun searchStatusColor(status: FlightStatus): Color {
+    return when (status) {
+        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.CLIMB,
+        FlightStatus.APPROACH, FlightStatus.DEPARTED, FlightStatus.TAKEOFF,
+        FlightStatus.TAXIING_OUT, FlightStatus.LANDING, FlightStatus.BOARDING,
+        FlightStatus.TAXIING_IN -> TrueSkiesColors.StatusOnTime
+        FlightStatus.ARRIVED, FlightStatus.LANDED, FlightStatus.COMPLETED -> TrueSkiesColors.StatusOnTime
+        FlightStatus.CANCELLED -> TrueSkiesColors.StatusCancelled
+        FlightStatus.DIVERTED -> TrueSkiesColors.StatusDiverted
+        FlightStatus.SCHEDULED, FlightStatus.FILING -> TrueSkiesColors.StatusOnTime
+        else -> TrueSkiesColors.TextSecondary
+    }
+}
+
+private fun formatDate(isoString: String?): String {
+    if (isoString == null) return ""
+    return try {
+        val zdt = ZonedDateTime.parse(isoString)
+        zdt.format(DateTimeFormatter.ofPattern("EEE, d MMM"))
+    } catch (e: Exception) {
+        try {
+            val s = isoString.substringBefore("Z").substringBefore("+")
+            java.time.LocalDateTime.parse(s.take(19))
+                .format(DateTimeFormatter.ofPattern("EEE, d MMM"))
+        } catch (e2: Exception) {
+            ""
         }
     }
 }
@@ -491,10 +816,11 @@ fun FlightStatusBadge(
     modifier: Modifier = Modifier
 ) {
     val bgColor = when (status) {
-        FlightStatus.SCHEDULED -> TrueSkiesColors.StatusScheduled
+        FlightStatus.SCHEDULED, FlightStatus.FILING -> TrueSkiesColors.StatusScheduled
         FlightStatus.BOARDING -> TrueSkiesColors.StatusBoarding
-        FlightStatus.DEPARTED, FlightStatus.TAXIING_OUT -> TrueSkiesColors.StatusActive
-        FlightStatus.EN_ROUTE, FlightStatus.APPROACH -> TrueSkiesColors.StatusOnTime
+        FlightStatus.DEPARTED, FlightStatus.TAXIING_OUT, FlightStatus.TAKEOFF -> TrueSkiesColors.StatusActive
+        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.CLIMB,
+        FlightStatus.APPROACH, FlightStatus.LANDING -> TrueSkiesColors.StatusOnTime
         FlightStatus.TAXIING_IN, FlightStatus.ARRIVED, FlightStatus.LANDED -> TrueSkiesColors.StatusLanded
         FlightStatus.COMPLETED -> TrueSkiesColors.StatusLanded
         FlightStatus.CANCELLED -> TrueSkiesColors.StatusCancelled
@@ -518,10 +844,16 @@ fun FlightStatusBadge(
 
 // ── Private helpers ──
 
-private fun formatTime(isoString: String?): String {
+private fun formatTime(isoString: String?, timezone: String? = null): String {
     if (isoString == null) return "--:--"
     return try {
-        ZonedDateTime.parse(isoString).format(DateTimeFormatter.ofPattern("HH:mm"))
+        val zdt = ZonedDateTime.parse(isoString)
+        val localZdt = if (timezone != null) {
+            zdt.withZoneSameInstant(java.time.ZoneId.of(timezone))
+        } else {
+            zdt
+        }
+        localZdt.format(DateTimeFormatter.ofPattern("HH:mm"))
     } catch (e: Exception) {
         try {
             val s = isoString.substringBefore("Z").substringBefore("+")

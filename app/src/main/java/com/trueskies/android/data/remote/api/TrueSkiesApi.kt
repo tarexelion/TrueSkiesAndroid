@@ -6,7 +6,7 @@ import retrofit2.http.*
 
 /**
  * TrueSkies Retrofit API interface — ported from iOS TrueSkiesBackendService.swift.
- * Covers flight search, details, live positions, and health check endpoints.
+ * Covers flight search, details, live positions, shared flights, and health check endpoints.
  */
 interface TrueSkiesApi {
 
@@ -28,7 +28,8 @@ interface TrueSkiesApi {
     suspend fun searchEnhancedFlights(
         @Query("query") query: String,
         @Query("date") date: String? = null,
-        @Query("limit") limit: Int? = null
+        @Query("limit") limit: Int? = null,
+        @Query("quick") quick: Boolean? = null
     ): Response<BackendFlightResponse>
 
     // ── Flight Details ──
@@ -41,7 +42,11 @@ interface TrueSkiesApi {
 
     @GET("/api/enhanced-flights/{faFlightId}")
     suspend fun getEnhancedFlightDetails(
-        @Path("faFlightId") faFlightId: String
+        @Path("faFlightId") faFlightId: String,
+        @Query("origin") origin: String? = null,
+        @Query("destination") destination: String? = null,
+        @Query("date") date: String? = null,
+        @Query("fresh") fresh: Boolean? = null
     ): Response<BackendFlightDetailsResponse>
 
     // ── Live Flights ──
@@ -50,6 +55,11 @@ interface TrueSkiesApi {
     suspend fun getLiveFlights(
         @Query("bounds") bounds: String? = null,
         @Query("limit") limit: Int? = null
+    ): Response<BackendLiveFlightsResponse>
+
+    @GET("/api/flights/global")
+    suspend fun getGlobalFlights(
+        @Query("target") target: Int? = null
     ): Response<BackendLiveFlightsResponse>
 
     @GET("/api/enhanced-flights/area")
@@ -74,11 +84,20 @@ interface TrueSkiesApi {
 
     @GET("/api/aeroapi/flights/{faFlightId}/position")
     suspend fun getFlightPosition(
-        @Path("faFlightId") faFlightId: String
+        @Path("faFlightId") faFlightId: String,
+        @Query("maxStale") maxStale: Int? = null,
+        @Query("fresh") fresh: Boolean? = null,
+        @Query("date") date: String? = null
     ): Response<BackendPositionResponse>
 
     @GET("/api/aeroapi/flights/{faFlightId}/track")
     suspend fun getFlightTrack(
+        @Path("faFlightId") faFlightId: String,
+        @Query("tracking") tracking: String? = null
+    ): Response<BackendTrackResponse>
+
+    @GET("/api/aeroapi/flights/{faFlightId}/route")
+    suspend fun getFlightRoute(
         @Path("faFlightId") faFlightId: String
     ): Response<BackendTrackResponse>
 
@@ -87,25 +106,76 @@ interface TrueSkiesApi {
     @GET("/api/aeroapi/airports/{code}/departures")
     suspend fun getAirportDepartures(
         @Path("code") airportCode: String,
-        @Query("limit") limit: Int? = null
+        @Query("limit") limit: Int? = null,
+        @Query("max_pages") maxPages: Int? = null,
+        @Query("fresh") fresh: Boolean? = null
     ): Response<BackendFlightResponse>
 
     @GET("/api/aeroapi/airports/{code}/arrivals")
     suspend fun getAirportArrivals(
         @Path("code") airportCode: String,
-        @Query("limit") limit: Int? = null
+        @Query("limit") limit: Int? = null,
+        @Query("max_pages") maxPages: Int? = null,
+        @Query("fresh") fresh: Boolean? = null
     ): Response<BackendFlightResponse>
 
-    // ── Schedules ──
+    @GET("/api/aeroapi/airports/{code}/delays")
+    suspend fun getAirportDelays(
+        @Path("code") airportCode: String
+    ): Response<HealthResponse>
+
+    @GET("/api/aeroapi/airports/{code}/nearby")
+    suspend fun getNearbyAirports(
+        @Path("code") airportCode: String
+    ): Response<BackendFlightResponse>
+
+    // ── Schedules (iOS: 1yr future, 3mo past) ──
 
     @GET("/api/aeroapi/schedules/{flightNumber}")
     suspend fun getFlightSchedules(
         @Path("flightNumber") flightNumber: String,
-        @Query("date") date: String? = null
+        @Query("start") start: String? = null,
+        @Query("end") end: String? = null,
+        @Query("date") date: String? = null,
+        @Query("max_pages") maxPages: Int? = null,
+        @Query("fresh") fresh: Boolean? = null
     ): Response<BackendFlightResponse>
+
+    // ── Shared Flights (iOS) ──
+
+    @POST("/api/shared-flights/create")
+    suspend fun createSharedFlight(
+        @Body request: BackendShareRequest
+    ): Response<BackendSharedFlightResponse>
+
+    @GET("/api/shared-flights/{shareCode}")
+    suspend fun getSharedFlight(
+        @Path("shareCode") shareCode: String
+    ): Response<BackendSharedFlightResponse>
+
+    @POST("/api/shared-flights/{shareCode}/join")
+    suspend fun joinSharedFlight(
+        @Path("shareCode") shareCode: String
+    ): Response<BackendSharedFlightResponse>
+
+    @POST("/api/shared-flights/{shareCode}/stop")
+    suspend fun stopSharedFlight(
+        @Path("shareCode") shareCode: String
+    ): Response<BackendSharedFlightResponse>
 
     // ── Service Status ──
 
     @GET("/api/aeroapi/status")
     suspend fun getAeroApiStatus(): Response<HealthResponse>
+
+    @GET("/api/enhanced-flights/service/status")
+    suspend fun getServiceStatus(): Response<BackendServiceStatusResponse>
+
+    // ── Auth (iOS device registration) ──
+
+    @GET("/api/auth/test")
+    suspend fun testAuth(): Response<HealthResponse>
+
+    @GET("/api/auth/me")
+    suspend fun getAuthMe(): Response<HealthResponse>
 }

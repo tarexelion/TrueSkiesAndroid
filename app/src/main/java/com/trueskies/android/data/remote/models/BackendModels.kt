@@ -2,7 +2,6 @@ package com.trueskies.android.data.remote.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 
 /**
  * Backend API response models — ported from iOS BackendModels.swift.
@@ -25,12 +24,13 @@ data class BackendFlightDetailsResponse(
     val success: Boolean,
     val flight: List<BackendFlight>? = null,
     val flights: List<BackendFlight>? = null,
+    val allFlights: List<BackendFlight>? = null,
     val metadata: BackendResponseMetadata? = null,
     val timestamp: String? = null
 ) {
-    /** Returns the best flight, preferring flight array first, then flights array */
+    /** Returns the best flight, preferring flight array first, then flights array, then allFlights */
     val resolvedFlight: BackendFlight?
-        get() = flight?.firstOrNull() ?: flights?.firstOrNull()
+        get() = flight?.firstOrNull() ?: flights?.firstOrNull() ?: allFlights?.firstOrNull()
 }
 
 @Serializable
@@ -76,6 +76,83 @@ data class HealthServiceStatus(
     val details: Map<String, String>? = null
 )
 
+// ── Shared Flight Responses (iOS) ──
+
+@Serializable
+data class BackendShareRequest(
+    val flightIdent: String,
+    val origin: String,
+    val destination: String,
+    val airline: String,
+    val departureDate: String? = null,
+    val user: BackendShareUser,
+    val permissions: BackendSharePermissions? = null,
+    val expiryHours: Int? = null,
+    val metadata: Map<String, String>? = null
+)
+
+@Serializable
+data class BackendShareUser(
+    val id: String,
+    val displayName: String? = null,
+    val avatarUrl: String? = null
+)
+
+@Serializable
+data class BackendSharePermissions(
+    val canViewRealtime: Boolean = true,
+    val canViewGate: Boolean = true,
+    val canViewNotifications: Boolean = true,
+    val canReshare: Boolean = false
+)
+
+@Serializable
+data class BackendSharedFlightResponse(
+    val success: Boolean,
+    val sharedFlight: BackendSharedFlight? = null,
+    val shareCode: String? = null,
+    val metadata: BackendResponseMetadata? = null
+)
+
+@Serializable
+data class BackendSharedFlight(
+    val id: String,
+    val flightIdent: String,
+    val shareCode: String,
+    val sharedBy: BackendShareUser? = null,
+    val sharedWith: List<BackendShareUser>? = null,
+    val origin: String? = null,
+    val destination: String? = null,
+    val airline: String? = null,
+    val status: String? = null,
+    val departureDate: String? = null,
+    val arrivalDate: String? = null,
+    val departureDelay: Int? = null,
+    val arrivalDelay: Int? = null,
+    val departureGate: String? = null,
+    val arrivalGate: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val heading: Double? = null,
+    val altitude: Int? = null,
+    val groundspeed: Int? = null,
+    val createdAt: String? = null,
+    val expiresAt: String? = null,
+    val isActive: Boolean? = null,
+    val permissions: BackendSharePermissions? = null
+)
+
+// ── Service Status (iOS) ──
+
+@Serializable
+data class BackendServiceStatusResponse(
+    val success: Boolean,
+    val healthy: Boolean? = null,
+    val rateLimited: Boolean? = null,
+    val recommendations: List<String>? = null,
+    val metadata: BackendResponseMetadata? = null
+)
+
 // ── Backend Flight ──
 
 @Serializable
@@ -100,13 +177,20 @@ data class BackendFlight(
     val arrivalDelay: Int? = null,
     val diverted: Boolean? = null,
     val divertedToAirport: BackendAirport? = null,
+    val diversionReason: String? = null,
+    val diversionTimestamp: String? = null,
+    val diversionEstimatedArrival: String? = null,
     val cancelled: Boolean? = null,
     val blocked: Boolean? = null,
     val foresightFactorsDeparture: List<String>? = null,
     val foresightFactorsArrival: List<String>? = null,
     val actualWheelsOff: String? = null,
     val actualWheelsOn: String? = null,
-    val marketingCarrier: BackendMarketingCarrier? = null
+    val marketingCarrier: BackendMarketingCarrier? = null,
+    val lastPosition: BackendLivePosition? = null,
+    val liveActivity: BackendLiveActivity? = null,
+    val operatorName: String? = null,
+    val hybridDataSources: List<String>? = null
 ) {
     /** Resolved departure delay: top-level > nested */
     val resolvedDepartureDelay: Int?
@@ -131,7 +215,10 @@ data class BackendAircraft(
     val registration: String? = null,
     val type: String? = null,
     val icao: String? = null,
-    val iata: String? = null
+    val iata: String? = null,
+    val model: String? = null,
+    val paintedAs: String? = null,
+    val operatingAs: String? = null
 )
 
 @Serializable
@@ -178,7 +265,8 @@ data class BackendPosition(
     val altitude: Double? = null,
     val heading: Double? = null,
     val speed: Double? = null,
-    val timestamp: String? = null
+    val timestamp: String? = null,
+    val verticalRate: Double? = null
 )
 
 @Serializable
@@ -238,7 +326,8 @@ data class BackendResponseMetadata(
     val cacheAge: Int? = null,
     val dateAvailability: DateAvailabilityMetadata? = null,
     val provisional: Boolean? = null,
-    val staleWarning: Boolean? = null
+    val staleWarning: Boolean? = null,
+    val dataConfidence: String? = null
 )
 
 @Serializable
@@ -281,6 +370,11 @@ data class BackendPositionMetadata(
     val endpoint: String? = null,
     val faFlightId: String? = null,
     val cacheStatus: String? = null,
+    val cacheLayer: String? = null,
+    val positionAge: Double? = null,
+    val stale: Boolean? = null,
+    val fallbackReason: String? = null,
+    val maxStale: Int? = null,
     val timestamp: String? = null
 )
 
@@ -306,6 +400,20 @@ data class BackendTrackMetadata(
     val endpoint: String? = null,
     val cacheStatus: String? = null,
     val timestamp: String? = null
+)
+
+// ── Live Activity (iOS push pre-computed data) ──
+
+@Serializable
+data class BackendLiveActivity(
+    val flightNumber: String? = null,
+    val status: String? = null,
+    val origin: String? = null,
+    val destination: String? = null,
+    val departureTime: String? = null,
+    val arrivalTime: String? = null,
+    val gate: String? = null,
+    val terminal: String? = null
 )
 
 // ── Error Response ──

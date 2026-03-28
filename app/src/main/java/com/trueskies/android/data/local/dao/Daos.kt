@@ -2,7 +2,9 @@ package com.trueskies.android.data.local.dao
 
 import androidx.room.*
 import com.trueskies.android.data.local.entities.FlightEntity
+import com.trueskies.android.data.local.entities.FlightEventEntity
 import com.trueskies.android.data.local.entities.PersonalFlightEntity
+import com.trueskies.android.data.local.entities.SharedFlightEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -53,4 +55,42 @@ interface PersonalFlightDao {
 
     @Query("SELECT COUNT(*) FROM personal_flights")
     suspend fun getPersonalFlightCount(): Int
+}
+
+@Dao
+interface SharedFlightDao {
+
+    @Query("SELECT * FROM shared_flights WHERE isActive = 1 ORDER BY createdAt DESC")
+    fun getActiveSharedFlights(): Flow<List<SharedFlightEntity>>
+
+    @Query("SELECT * FROM shared_flights WHERE shareCode = :shareCode")
+    suspend fun getSharedFlightByCode(shareCode: String): SharedFlightEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSharedFlight(flight: SharedFlightEntity)
+
+    @Query("UPDATE shared_flights SET isActive = 0 WHERE shareCode = :shareCode")
+    suspend fun deactivateSharedFlight(shareCode: String)
+
+    @Query("DELETE FROM shared_flights WHERE id = :id")
+    suspend fun deleteSharedFlight(id: String)
+
+    @Query("DELETE FROM shared_flights")
+    suspend fun deleteAllSharedFlights()
+}
+
+@Dao
+interface FlightEventDao {
+
+    @Query("SELECT * FROM flight_events WHERE flightId = :flightId ORDER BY timestamp DESC")
+    fun getEventsForFlight(flightId: String): Flow<List<FlightEventEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvent(event: FlightEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvents(events: List<FlightEventEntity>)
+
+    @Query("DELETE FROM flight_events WHERE flightId = :flightId")
+    suspend fun deleteEventsForFlight(flightId: String)
 }

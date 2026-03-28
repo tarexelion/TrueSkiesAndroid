@@ -2,14 +2,18 @@ package com.trueskies.android.data.repository
 
 import android.util.Log
 import com.trueskies.android.data.local.dao.FlightDao
+import com.trueskies.android.data.local.dao.FlightEventDao
 import com.trueskies.android.data.local.dao.PersonalFlightDao
+import com.trueskies.android.data.local.dao.SharedFlightDao
 import com.trueskies.android.data.local.entities.FlightEntity
+import com.trueskies.android.data.local.entities.FlightEventEntity
 import com.trueskies.android.data.local.entities.PersonalFlightEntity
+import com.trueskies.android.data.local.entities.SharedFlightEntity
 import com.trueskies.android.data.remote.api.TrueSkiesApi
 import com.trueskies.android.data.remote.models.BackendFlight
-import com.trueskies.android.domain.models.Flight
-import com.trueskies.android.domain.models.PersonalFlight
-import com.trueskies.android.domain.models.SeatClass
+import com.trueskies.android.data.remote.models.BackendShareRequest
+import com.trueskies.android.data.remote.models.BackendShareUser
+import com.trueskies.android.domain.models.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -19,13 +23,15 @@ import javax.inject.Singleton
 
 /**
  * Flight repository — combines remote API and local cache.
- * Ported from iOS TrueSkiesBackendService + PersonalFlightManager.
+ * Ported from iOS TrueSkiesBackendService + PersonalFlightManager + FriendsAPIService.
  */
 @Singleton
 class FlightRepository @Inject constructor(
     private val api: TrueSkiesApi,
     private val flightDao: FlightDao,
-    private val personalFlightDao: PersonalFlightDao
+    private val personalFlightDao: PersonalFlightDao,
+    private val sharedFlightDao: SharedFlightDao,
+    private val flightEventDao: FlightEventDao
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
 
@@ -41,17 +47,14 @@ class FlightRepository @Inject constructor(
             if (response.isSuccessful) {
                 val body = response.body()
                 val flights = body?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
-                // Cache results
                 cacheFlights(body?.flights ?: emptyList())
                 Result.success(flights)
             } else {
                 Log.w(TAG, "Search failed: ${response.code()} ${response.message()}")
-                // Try enhanced search as fallback
                 searchEnhancedFlights(query, date)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Search error", e)
-            // Fallback to local cache
             val cached = flightDao.searchFlights(query)
             if (cached.isNotEmpty()) {
                 Result.success(cached.map { it.toDomainFlight() })
@@ -61,9 +64,13 @@ class FlightRepository @Inject constructor(
         }
     }
 
-    private suspend fun searchEnhancedFlights(query: String, date: String? = null): Result<List<Flight>> {
+    suspend fun searchEnhancedFlights(
+        query: String,
+        date: String? = null,
+        quick: Boolean? = null
+    ): Result<List<Flight>> {
         return try {
-            val response = api.searchEnhancedFlights(query = query, date = date)
+            val response = api.searchEnhancedFlights(query = query, date = date, quick = quick)
             if (response.isSuccessful) {
                 val flights = response.body()?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
                 Result.success(flights)
@@ -77,7 +84,12 @@ class FlightRepository @Inject constructor(
 
     // ── Flight Details ──
 
-    suspend fun getFlightDetails(flightId: String, date: String? = null): Result<Flight> {
+    suspend fun getFlightDetails(
+        flightId: String,
+        date: String? = null,
+        origin: String? = null,
+        destination: String? = null
+    ): Result<Flight> {
         return try {
             val response = api.getFlightDetails(flightId = flightId, date = date)
             if (response.isSuccessful) {
@@ -88,10 +100,82 @@ class FlightRepository @Inject constructor(
                     Result.failure(Exception("No flight data in response"))
                 }
             } else {
-                Result.failure(Exception("Details failed: ${response.code()}"))
+                // Try enhanced details as fallback
+                val enhancedResponse = api.getEnhancedFlightDetails(
+                    faFlightId = flightId, origin = origin, destination = destination, date = date
+                )
+                if (enhancedResponse.isSuccessful) {
+                    val bf = enhancedResponse.body()?.resolvedFlight
+                    if (bf != null) Result.success(Flight.fromBackend(bf))
+                    else Result.failure(Exception("No flight data"))
+                } else {
+                    Result.failure(Exception("Details failed: ${response.code()}"))
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Flight details error", e)
+            Result.failure(e)
+        }
+    }
+
+    // ── Flight Position (iOS lightweight position endpoint) ──
+
+    suspend fun getFlightPosition(faFlightId: String, maxStale: Int? = null): Result<Flight> {
+        return try {
+            val response = api.getFlightPosition(faFlightId, maxStale = maxStale)
+            if (response.isSuccessful) {
+                val pos = response.body()?.position
+                if (pos != null) {
+                    // Return a minimal flight with just position data
+                    Result.success(
+                        Flight(
+                            id = pos.faFlightId ?: faFlightId,
+                            flightNumber = faFlightId,
+                            displayFlightNumber = faFlightId,
+                            originCode = "",
+                            destinationCode = "",
+                            latitude = pos.latitude,
+                            longitude = pos.longitude,
+                            altitude = pos.altitude?.toDouble(),
+                            heading = pos.heading?.toDouble(),
+                            speed = pos.groundspeed?.toDouble(),
+                            positionTimestamp = pos.timestamp
+                        )
+                    )
+                } else {
+                    Result.failure(Exception("No position data"))
+                }
+            } else {
+                Result.failure(Exception("Position failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ── Flight Track (actual path traveled) ──
+
+    suspend fun getFlightTrack(faFlightId: String): Result<List<TrackPoint>> {
+        return try {
+            val response = api.getFlightTrack(faFlightId)
+            if (response.isSuccessful) {
+                val positions = response.body()?.track?.positions
+                if (!positions.isNullOrEmpty()) {
+                    Result.success(positions.map {
+                        TrackPoint(
+                            latitude = it.latitude,
+                            longitude = it.longitude,
+                            altitude = it.altitude?.toDouble(),
+                            timestamp = it.timestamp
+                        )
+                    })
+                } else {
+                    Result.failure(Exception("No track data"))
+                }
+            } else {
+                Result.failure(Exception("Track failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }
@@ -104,7 +188,6 @@ class FlightRepository @Inject constructor(
         limit: Int = 100
     ): Result<List<Flight>> {
         return try {
-            // Try enhanced area flights first
             val response = api.getEnhancedAreaFlights(
                 minLat = minLat, maxLat = maxLat,
                 minLon = minLon, maxLon = maxLon,
@@ -114,7 +197,6 @@ class FlightRepository @Inject constructor(
                 val flights = response.body()?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
                 Result.success(flights)
             } else {
-                // Fallback to db-flights
                 val dbResponse = api.getDbFlightsByBounds(
                     minLat = minLat, maxLat = maxLat,
                     minLon = minLon, maxLon = maxLon,
@@ -129,6 +211,53 @@ class FlightRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Live flights error", e)
+            Result.failure(e)
+        }
+    }
+
+    // ── Airport Operations (iOS) ──
+
+    suspend fun getAirportDepartures(airportCode: String, limit: Int? = null): Result<List<Flight>> {
+        return try {
+            val response = api.getAirportDepartures(airportCode, limit = limit)
+            if (response.isSuccessful) {
+                Result.success(response.body()?.flights?.map { Flight.fromBackend(it) } ?: emptyList())
+            } else {
+                Result.failure(Exception("Airport departures failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAirportArrivals(airportCode: String, limit: Int? = null): Result<List<Flight>> {
+        return try {
+            val response = api.getAirportArrivals(airportCode, limit = limit)
+            if (response.isSuccessful) {
+                Result.success(response.body()?.flights?.map { Flight.fromBackend(it) } ?: emptyList())
+            } else {
+                Result.failure(Exception("Airport arrivals failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ── Schedules (iOS: 1yr future, 3mo past) ──
+
+    suspend fun getFlightSchedules(
+        flightNumber: String,
+        start: String? = null,
+        end: String? = null
+    ): Result<List<Flight>> {
+        return try {
+            val response = api.getFlightSchedules(flightNumber, start = start, end = end)
+            if (response.isSuccessful) {
+                Result.success(response.body()?.flights?.map { Flight.fromBackend(it) } ?: emptyList())
+            } else {
+                Result.failure(Exception("Schedules failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }
@@ -159,26 +288,79 @@ class FlightRepository @Inject constructor(
         }
     }
 
-    suspend fun addPersonalFlight(flight: Flight, notes: String? = null, seatNumber: String? = null): PersonalFlight {
+    suspend fun addPersonalFlight(
+        flight: Flight,
+        notes: String? = null,
+        seatNumber: String? = null,
+        seatClass: SeatClass? = null,
+        bookingReference: String? = null
+    ): PersonalFlight {
+        // If origin or destination coordinates are missing, try to enrich from API details
+        val enrichedFlight = if (flight.originLat == null || flight.originLon == null ||
+            flight.destinationLat == null || flight.destinationLon == null) {
+            Log.d(TAG, "Flight ${flight.flightNumber} missing coords (origin=${flight.originLat},${flight.originLon} dest=${flight.destinationLat},${flight.destinationLon}), fetching details...")
+            try {
+                val detailResult = getFlightDetails(
+                    flightId = flight.id,
+                    origin = flight.originCode,
+                    destination = flight.destinationCode
+                )
+                detailResult.getOrNull()?.let { detailed ->
+                    Log.d(TAG, "Enriched flight coords: origin=${detailed.originLat},${detailed.originLon} dest=${detailed.destinationLat},${detailed.destinationLon}")
+                    // Merge: prefer detailed coords but keep original data where detailed is null
+                    flight.copy(
+                        originLat = detailed.originLat ?: flight.originLat,
+                        originLon = detailed.originLon ?: flight.originLon,
+                        originName = detailed.originName ?: flight.originName,
+                        originCity = detailed.originCity ?: flight.originCity,
+                        originCountry = detailed.originCountry ?: flight.originCountry,
+                        originTimezone = detailed.originTimezone ?: flight.originTimezone,
+                        destinationLat = detailed.destinationLat ?: flight.destinationLat,
+                        destinationLon = detailed.destinationLon ?: flight.destinationLon,
+                        destinationName = detailed.destinationName ?: flight.destinationName,
+                        destinationCity = detailed.destinationCity ?: flight.destinationCity,
+                        destinationCountry = detailed.destinationCountry ?: flight.destinationCountry,
+                        destinationTimezone = detailed.destinationTimezone ?: flight.destinationTimezone,
+                        latitude = detailed.latitude ?: flight.latitude,
+                        longitude = detailed.longitude ?: flight.longitude,
+                        altitude = detailed.altitude ?: flight.altitude,
+                        heading = detailed.heading ?: flight.heading,
+                        speed = detailed.speed ?: flight.speed,
+                        progressPercent = detailed.progressPercent ?: flight.progressPercent,
+                        trackPoints = if (detailed.trackPoints.isNotEmpty()) detailed.trackPoints else flight.trackPoints
+                    )
+                } ?: flight
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to enrich flight details", e)
+                flight
+            }
+        } else {
+            flight
+        }
+
         val personalFlight = PersonalFlight(
-            flight = flight,
-            notes = notes,
-            seatNumber = seatNumber
-        )
-        val backendFlight = createBackendFlightFromDomain(flight)
-        val entity = PersonalFlightEntity(
-            localId = personalFlight.localId,
-            flightId = flight.id,
-            flightNumber = flight.flightNumber,
-            originCode = flight.originCode,
-            destinationCode = flight.destinationCode,
-            airlineName = flight.airlineName,
-            airlineIata = flight.airlineIata,
-            status = flight.rawStatus,
-            scheduledDeparture = flight.scheduledDeparture,
-            scheduledArrival = flight.scheduledArrival,
+            flight = enrichedFlight,
             notes = notes,
             seatNumber = seatNumber,
+            seatClass = seatClass,
+            bookingReference = bookingReference
+        )
+        val backendFlight = createBackendFlightFromDomain(enrichedFlight)
+        val entity = PersonalFlightEntity(
+            localId = personalFlight.localId,
+            flightId = enrichedFlight.id,
+            flightNumber = enrichedFlight.flightNumber,
+            originCode = enrichedFlight.originCode,
+            destinationCode = enrichedFlight.destinationCode,
+            airlineName = enrichedFlight.airlineName,
+            airlineIata = enrichedFlight.airlineIata,
+            status = enrichedFlight.rawStatus,
+            scheduledDeparture = enrichedFlight.scheduledDeparture,
+            scheduledArrival = enrichedFlight.scheduledArrival,
+            notes = notes,
+            seatNumber = seatNumber,
+            seatClass = seatClass?.name,
+            bookingReference = bookingReference,
             addedAt = personalFlight.addedAt,
             lastUpdated = personalFlight.lastUpdated,
             flightJson = json.encodeToString(backendFlight)
@@ -193,16 +375,166 @@ class FlightRepository @Inject constructor(
 
     suspend fun refreshPersonalFlight(personalFlight: PersonalFlight): Result<PersonalFlight> {
         return try {
-            val result = getFlightDetails(personalFlight.flight.id)
+            val result = getFlightDetails(
+                flightId = personalFlight.flight.id,
+                origin = personalFlight.flight.originCode,
+                destination = personalFlight.flight.destinationCode
+            )
             result.map { updatedFlight ->
-                personalFlight.copy(
+                val refreshed = personalFlight.copy(
                     flight = updatedFlight,
                     lastUpdated = System.currentTimeMillis()
                 )
+                // Persist the updated data back to Room
+                val backendFlight = createBackendFlightFromDomain(updatedFlight)
+                personalFlightDao.insertPersonalFlight(
+                    PersonalFlightEntity(
+                        localId = refreshed.localId,
+                        flightId = updatedFlight.id,
+                        flightNumber = updatedFlight.flightNumber,
+                        originCode = updatedFlight.originCode,
+                        destinationCode = updatedFlight.destinationCode,
+                        airlineName = updatedFlight.airlineName,
+                        airlineIata = updatedFlight.airlineIata,
+                        status = updatedFlight.rawStatus,
+                        scheduledDeparture = updatedFlight.scheduledDeparture,
+                        scheduledArrival = updatedFlight.scheduledArrival,
+                        notes = refreshed.notes,
+                        seatNumber = refreshed.seatNumber,
+                        seatClass = refreshed.seatClass?.name,
+                        bookingReference = refreshed.bookingReference,
+                        customName = refreshed.customName,
+                        isNotificationsEnabled = refreshed.isNotificationsEnabled,
+                        sequenceNumber = refreshed.sequenceNumber,
+                        boardingGroup = refreshed.boardingGroup,
+                        cabinClass = refreshed.cabinClass,
+                        isProvisional = refreshed.isProvisional,
+                        provisionalUntil = refreshed.provisionalUntil,
+                        addedAt = refreshed.addedAt,
+                        lastUpdated = refreshed.lastUpdated,
+                        flightJson = json.encodeToString(backendFlight)
+                    )
+                )
+                Log.d(TAG, "Refreshed flight ${updatedFlight.flightNumber}: origin=${updatedFlight.originLat},${updatedFlight.originLon} dest=${updatedFlight.destinationLat},${updatedFlight.destinationLon}")
+                refreshed
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Refresh personal flight error", e)
+            Result.failure(e)
+        }
+    }
+
+    // ── Shared Flights (iOS) ──
+
+    fun getSharedFlightsFlow(): Flow<List<SharedFlightEntity>> {
+        return sharedFlightDao.getActiveSharedFlights()
+    }
+
+    suspend fun createSharedFlight(
+        flight: Flight,
+        userId: String,
+        displayName: String?
+    ): Result<String> {
+        return try {
+            val request = BackendShareRequest(
+                flightIdent = flight.flightNumber,
+                origin = flight.originCode,
+                destination = flight.destinationCode,
+                airline = flight.airlineIata ?: flight.airlineName ?: "",
+                departureDate = flight.scheduledDeparture,
+                user = BackendShareUser(id = userId, displayName = displayName)
+            )
+            val response = api.createSharedFlight(request)
+            if (response.isSuccessful) {
+                val shareCode = response.body()?.shareCode
+                if (shareCode != null) {
+                    // Cache locally
+                    sharedFlightDao.insertSharedFlight(
+                        SharedFlightEntity(
+                            id = response.body()?.sharedFlight?.id ?: shareCode,
+                            flightIdent = flight.flightNumber,
+                            shareCode = shareCode,
+                            sharedByName = displayName,
+                            origin = flight.originCode,
+                            destination = flight.destinationCode,
+                            airline = flight.airlineName,
+                            status = flight.rawStatus,
+                            departureDate = flight.scheduledDeparture
+                        )
+                    )
+                    Result.success(shareCode)
+                } else {
+                    Result.failure(Exception("No share code returned"))
+                }
+            } else {
+                Result.failure(Exception("Share failed: ${response.code()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun joinSharedFlight(shareCode: String): Result<SharedFlightEntity?> {
+        return try {
+            val response = api.joinSharedFlight(shareCode)
+            if (response.isSuccessful) {
+                val sf = response.body()?.sharedFlight
+                if (sf != null) {
+                    val entity = SharedFlightEntity(
+                        id = sf.id,
+                        flightIdent = sf.flightIdent,
+                        shareCode = sf.shareCode,
+                        sharedByName = sf.sharedBy?.displayName,
+                        origin = sf.origin,
+                        destination = sf.destination,
+                        airline = sf.airline,
+                        status = sf.status
+                    )
+                    sharedFlightDao.insertSharedFlight(entity)
+                    Result.success(entity)
+                } else {
+                    Result.success(null)
+                }
+            } else {
+                Result.failure(Exception("Join failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun stopSharedFlight(shareCode: String): Result<Unit> {
+        return try {
+            val response = api.stopSharedFlight(shareCode)
+            if (response.isSuccessful) {
+                sharedFlightDao.deactivateSharedFlight(shareCode)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Stop sharing failed: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ── Flight Events (iOS timeline) ──
+
+    fun getFlightEventsFlow(flightId: String): Flow<List<FlightEventEntity>> {
+        return flightEventDao.getEventsForFlight(flightId)
+    }
+
+    suspend fun recordFlightEvent(event: FlightEvent) {
+        flightEventDao.insertEvent(
+            FlightEventEntity(
+                id = event.id,
+                flightId = event.flightId,
+                timestamp = event.timestamp,
+                eventType = event.eventType.name,
+                previousValue = event.previousValue,
+                newValue = event.newValue,
+                eventDescription = event.eventDescription
+            )
+        )
     }
 
     // ── Private Helpers ──
@@ -216,11 +548,20 @@ class FlightRepository @Inject constructor(
                 destinationCode = bf.destination?.resolvedCode ?: "",
                 airlineName = bf.airline?.name,
                 airlineIata = bf.airline?.iata,
+                airlineIcao = bf.airline?.icao,
                 status = bf.status,
                 scheduledDeparture = bf.departure?.scheduled ?: bf.schedule?.departure?.scheduled,
                 scheduledArrival = bf.arrival?.scheduled ?: bf.schedule?.arrival?.scheduled,
                 latitude = bf.position?.latitude,
-                longitude = bf.position?.longitude
+                longitude = bf.position?.longitude,
+                altitude = bf.position?.altitude,
+                heading = bf.position?.heading,
+                speed = bf.position?.speed,
+                progressPercent = bf.progressPercent,
+                departureDelay = bf.resolvedDepartureDelay,
+                arrivalDelay = bf.resolvedArrivalDelay,
+                diverted = bf.diverted == true,
+                cancelled = bf.cancelled == true
             )
         }
         flightDao.insertFlights(entities)
@@ -230,7 +571,17 @@ class FlightRepository @Inject constructor(
         return BackendFlight(
             id = flight.id,
             flightNumber = flight.flightNumber,
+            callsign = flight.callsign,
             status = flight.rawStatus,
+            detailedStatus = flight.detailedStatus,
+            progressPercent = flight.progressPercent,
+            departureDelay = flight.departureDelay,
+            arrivalDelay = flight.arrivalDelay,
+            diverted = flight.diverted,
+            cancelled = flight.cancelled,
+            blocked = flight.blocked,
+            actualWheelsOff = flight.actualWheelsOff,
+            actualWheelsOn = flight.actualWheelsOn,
             origin = com.trueskies.android.data.remote.models.BackendAirport(
                 code = flight.originCode, name = flight.originName, city = flight.originCity,
                 country = flight.originCountry, latitude = flight.originLat, longitude = flight.originLon,
@@ -241,17 +592,37 @@ class FlightRepository @Inject constructor(
                 country = flight.destinationCountry, latitude = flight.destinationLat, longitude = flight.destinationLon,
                 timezone = flight.destinationTimezone
             ),
+            airline = com.trueskies.android.data.remote.models.BackendAirline(
+                name = flight.airlineName, iata = flight.airlineIata, icao = flight.airlineIcao
+            ),
+            aircraft = com.trueskies.android.data.remote.models.BackendAircraft(
+                registration = flight.aircraftRegistration, type = flight.aircraftType,
+                icao = flight.aircraftIcao, iata = flight.aircraftIata
+            ),
             departure = com.trueskies.android.data.remote.models.BackendFlightTime(
-                scheduled = flight.scheduledDeparture, estimated = flight.estimatedDeparture, actual = flight.actualDeparture
+                scheduled = flight.scheduledDeparture, estimated = flight.estimatedDeparture,
+                actual = flight.actualDeparture
             ),
             arrival = com.trueskies.android.data.remote.models.BackendFlightTime(
-                scheduled = flight.scheduledArrival, estimated = flight.estimatedArrival, actual = flight.actualArrival
-            )
+                scheduled = flight.scheduledArrival, estimated = flight.estimatedArrival,
+                actual = flight.actualArrival
+            ),
+            route = com.trueskies.android.data.remote.models.BackendRoute(
+                distance = flight.routeDistance, duration = flight.routeDuration
+            ),
+            marketingCarrier = if (flight.marketingFlightNumber != null)
+                com.trueskies.android.data.remote.models.BackendMarketingCarrier(
+                    flightNumber = flight.marketingFlightNumber,
+                    airlineCode = flight.marketingAirlineCode,
+                    iata = flight.marketingAirlineIata,
+                    icao = flight.marketingAirlineIcao,
+                    name = flight.marketingAirlineName
+                ) else null
         )
     }
 }
 
-// ── Extension ──
+// ── Extensions ──
 
 private fun FlightEntity.toDomainFlight(): Flight {
     return Flight(
@@ -262,11 +633,20 @@ private fun FlightEntity.toDomainFlight(): Flight {
         destinationCode = destinationCode,
         airlineName = airlineName,
         airlineIata = airlineIata,
+        airlineIcao = airlineIcao,
         rawStatus = status,
         scheduledDeparture = scheduledDeparture,
         scheduledArrival = scheduledArrival,
         latitude = latitude,
-        longitude = longitude
+        longitude = longitude,
+        altitude = altitude,
+        heading = heading,
+        speed = speed,
+        progressPercent = progressPercent,
+        departureDelay = departureDelay,
+        arrivalDelay = arrivalDelay,
+        diverted = diverted,
+        cancelled = cancelled
     )
 }
 
@@ -276,7 +656,6 @@ private fun PersonalFlightEntity.toDomainPersonalFlight(json: Json): PersonalFli
             val bf = json.decodeFromString<BackendFlight>(flightJson)
             Flight.fromBackend(bf)
         } catch (e: Exception) {
-            // Fallback: construct from entity fields
             Flight(
                 id = flightId,
                 flightNumber = flightNumber,
@@ -314,6 +693,11 @@ private fun PersonalFlightEntity.toDomainPersonalFlight(json: Json): PersonalFli
         bookingReference = bookingReference,
         customName = customName,
         isNotificationsEnabled = isNotificationsEnabled,
+        sequenceNumber = sequenceNumber,
+        boardingGroup = boardingGroup,
+        cabinClass = cabinClass,
+        isProvisional = isProvisional,
+        provisionalUntil = provisionalUntil,
         addedAt = addedAt,
         lastUpdated = lastUpdated
     )

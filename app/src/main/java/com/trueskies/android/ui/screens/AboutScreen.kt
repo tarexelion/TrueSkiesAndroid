@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,10 +20,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.trueskies.android.R
 import com.trueskies.android.ui.components.LiquidGlassCard
 import com.trueskies.android.ui.theme.*
 
@@ -68,24 +72,14 @@ fun AboutScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(TrueSkiesSpacing.xl))
 
             // App icon hero
-            Box(
+            Image(
+                painter = painterResource(id = R.drawable.trueskies_logo),
+                contentDescription = "TrueSkies",
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(96.dp)
                     .clip(RoundedCornerShape(TrueSkiesCornerRadius.xl))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(TrueSkiesColors.AccentBlue, TrueSkiesColors.AccentCyan)
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Flight,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(52.dp)
-                )
-            }
+            )
 
             Spacer(Modifier.height(TrueSkiesSpacing.md))
 

@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command \"Set-Location ''c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat assembleDebug 2>&1 | Tee-Object -Variable output; $output\")"
+      "Bash(powershell -Command \"Set-Location ''c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid''; .\\\\gradlew.bat assembleDebug 2>&1 | Tee-Object -Variable output; $output\")",
+      "Bash(sed 's/\\\\.swift$//')",
+      "Bash(ls gradlew*)",
+      "Bash(cmd.exe /c \"gradlew.bat assembleDebug 2>&1\")",
+      "Bash(cmd.exe /c \"set JAVA_HOME=C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr&& gradlew.bat assembleDebug 2>&1\")",
+      "Bash(cmd //c \"set JAVA_HOME=C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr&& gradlew.bat assembleDebug\")",
+      "Bash(JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\" ./gradlew.bat assembleDebug)"
     ]
   }
 }
