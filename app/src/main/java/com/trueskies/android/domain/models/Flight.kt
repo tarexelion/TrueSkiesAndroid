@@ -133,6 +133,10 @@ data class Flight(
     val hasPosition: Boolean
         get() = latitude != null && longitude != null
 
+    /** Extract airline code prefix from flight number (e.g., "PGT5045" → "PGT") */
+    val airlineCodeFromFlightNumber: String?
+        get() = Regex("^([A-Z]{2,3})\\d").find(flightNumber)?.groupValues?.get(1)
+
     /** Route display string */
     val routeDisplay: String
         get() = "$originCode → $destinationCode"

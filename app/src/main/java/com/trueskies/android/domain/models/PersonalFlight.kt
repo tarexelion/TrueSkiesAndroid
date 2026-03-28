@@ -102,6 +102,7 @@ data class PersonalFlight(
     /** Best airline code for logo resolution (iOS logoAirlineCode) */
     val logoAirlineCode: String?
         get() = flight.marketingAirlineIata ?: flight.airlineIata ?: flight.airlineIcao
+            ?: flight.airlineCodeFromFlightNumber
 
     /** Effective departure time: actual > estimated > scheduled */
     val effectiveDepartureTime: String?

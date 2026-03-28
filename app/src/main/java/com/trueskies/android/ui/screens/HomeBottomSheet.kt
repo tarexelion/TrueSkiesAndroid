@@ -1,6 +1,5 @@
 package com.trueskies.android.ui.screens
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -241,48 +240,10 @@ fun MyFlightsSheetContent(
                             items = flightsState.personalFlights,
                             key = { it.localId }
                         ) { personalFlight ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = { it == SwipeToDismissBoxValue.EndToStart }
+                            FlightCard(
+                                personalFlight = personalFlight,
+                                onClick = { onFlightClick(personalFlight.flight.id) }
                             )
-                            LaunchedEffect(dismissState.currentValue) {
-                                if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-                                    flightsViewModel.deleteFlight(personalFlight.localId)
-                                }
-                            }
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = false,
-                                backgroundContent = {
-                                    val bgColor by animateColorAsState(
-                                        if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart)
-                                            TrueSkiesColors.StatusCancelled.copy(alpha = 0.85f)
-                                        else
-                                            TrueSkiesColors.SurfaceElevated,
-                                        label = "swipe-bg"
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                bgColor,
-                                                RoundedCornerShape(TrueSkiesCornerRadius.lg)
-                                            )
-                                            .padding(end = TrueSkiesSpacing.lg),
-                                        contentAlignment = Alignment.CenterEnd
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete flight",
-                                            tint = TrueSkiesColors.TextPrimary
-                                        )
-                                    }
-                                }
-                            ) {
-                                FlightCard(
-                                    personalFlight = personalFlight,
-                                    onClick = { onFlightClick(personalFlight.flight.id) }
-                                )
-                            }
                         }
                     }
                 }

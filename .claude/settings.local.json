@@ -73,7 +73,9 @@
       "Bash(done echo \"=== Sample SeatMaps ===\" find \"c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid\\\\TrueSkies iOS\\\\TrueSkies\\\\TrueSkies\\\\Assets.xcassets/SeatMaps\" -name \"*.png\")",
       "Bash(done echo \"=== aircraft_images ===\" find \"c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid\\\\TrueSkies iOS\\\\TrueSkies\\\\TrueSkies\\\\Assets.xcassets/aircraft_images\" -name \"*.png\" -o -name \"*.jpg\")",
       "Bash(done echo \"=== TrueSkiesTitle ===\" find \"c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid\\\\TrueSkies iOS\\\\TrueSkies\\\\TrueSkies\\\\Assets.xcassets/TrueSkiesTitle.imageset\" -name \"*.png\")",
-      "Bash(done echo \"=== TrueSkiesTitleLight ===\" find \"c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid\\\\TrueSkies iOS\\\\TrueSkies\\\\TrueSkies\\\\Assets.xcassets/TrueSkiesTitleLight.imageset\" -name \"*.png\")"
+      "Bash(done echo \"=== TrueSkiesTitleLight ===\" find \"c:\\\\Users\\\\Tuna\\\\Documents\\\\Insania\\\\TrueSkiesAndroid\\\\TrueSkies iOS\\\\TrueSkies\\\\TrueSkies\\\\Assets.xcassets/TrueSkiesTitleLight.imageset\" -name \"*.png\")",
+      "Bash(xargs basename -a)",
+      "Bash(xargs wc -l)"
     ]
   }
 }

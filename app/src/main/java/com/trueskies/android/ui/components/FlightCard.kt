@@ -344,7 +344,7 @@ private fun InFlightDisplay() {
 
 @Composable
 private fun AirlineAvatar(iata: String?, name: String?) {
-    val logoBitmap = rememberAirlineLogo(name)
+    val logoBitmap = rememberAirlineLogo(airlineName = name, airlineCode = iata)
 
     if (logoBitmap != null) {
         Image(
@@ -443,16 +443,16 @@ private fun statusText(flight: Flight, status: FlightStatus): String {
             val delay = flight.departureDelay ?: 0
             if (delay > 0) "Delayed +${formatDelayMins(delay)}" else "On Time"
         }
-        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.APPROACH -> {
-            val pct = flight.progressPercent
-            if (pct != null && pct > 0) "En Route · $pct%" else "En Route"
+        FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.APPROACH,
+        FlightStatus.CLIMB, FlightStatus.TAKEOFF, FlightStatus.LANDING,
+        FlightStatus.TAXIING_IN, FlightStatus.TAXIING_OUT,
+        FlightStatus.DEPARTED -> {
+            val arrTime = flight.bestArrivalTime
+            if (arrTime != null) {
+                val time = formatTime(arrTime, flight.destinationTimezone)
+                "Arrives $time"
+            } else "In Flight"
         }
-        FlightStatus.CLIMB -> "Climbing"
-        FlightStatus.TAKEOFF -> "Takeoff"
-        FlightStatus.LANDING -> "Landing"
-        FlightStatus.TAXIING_IN -> "Taxiing to Gate"
-        FlightStatus.TAXIING_OUT -> "Taxiing Out"
-        FlightStatus.DEPARTED -> "In Flight"
         else -> status.displayName
     }
 }
@@ -606,7 +606,7 @@ fun SearchResultFlightCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AirlineAvatar(iata = flight.airlineIata, name = flight.airlineName)
+                    AirlineAvatar(iata = flight.airlineIata ?: flight.airlineIcao, name = flight.airlineName)
                     Spacer(Modifier.width(TrueSkiesSpacing.xs))
                     Text(
                         text = flight.displayFlightNumber,
