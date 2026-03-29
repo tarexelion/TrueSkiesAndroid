@@ -79,6 +79,11 @@ data class SharedFlightEntity(
     val airline: String? = null,
     val status: String? = null,
     val departureDate: String? = null,
+    val arrivalDate: String? = null,
+    val departureDelay: Int? = null,
+    val arrivalDelay: Int? = null,
+    val departureGate: String? = null,
+    val arrivalGate: String? = null,
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )

@@ -99,6 +99,11 @@ data class BackendShareUser(
 )
 
 @Serializable
+data class BackendJoinRequest(
+    val user: BackendShareUser
+)
+
+@Serializable
 data class BackendSharePermissions(
     val canViewRealtime: Boolean = true,
     val canViewGate: Boolean = true,
@@ -119,8 +124,7 @@ data class BackendSharedFlight(
     val id: String,
     val flightIdent: String,
     val shareCode: String,
-    val sharedBy: BackendShareUser? = null,
-    val sharedWith: List<BackendShareUser>? = null,
+    val sharedBy: String? = null,
     val origin: String? = null,
     val destination: String? = null,
     val airline: String? = null,
@@ -162,6 +166,7 @@ data class BackendFlight(
     val callsign: String? = null,
     val aircraft: BackendAircraft? = null,
     val airline: BackendAirline? = null,
+    val operator: BackendAirline? = null,
     val origin: BackendAirport? = null,
     val destination: BackendAirport? = null,
     val position: BackendPosition? = null,

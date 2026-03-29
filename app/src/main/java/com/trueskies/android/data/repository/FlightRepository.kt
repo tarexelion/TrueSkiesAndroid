@@ -11,6 +11,8 @@ import com.trueskies.android.data.local.entities.PersonalFlightEntity
 import com.trueskies.android.data.local.entities.SharedFlightEntity
 import com.trueskies.android.data.remote.api.TrueSkiesApi
 import com.trueskies.android.data.remote.models.BackendFlight
+import com.trueskies.android.data.remote.models.BackendJoinRequest
+import com.trueskies.android.data.remote.models.BackendSharePermissions
 import com.trueskies.android.data.remote.models.BackendShareRequest
 import com.trueskies.android.data.remote.models.BackendShareUser
 import com.trueskies.android.domain.models.*
@@ -440,13 +442,19 @@ class FlightRepository @Inject constructor(
                 flightIdent = flight.flightNumber,
                 origin = flight.originCode,
                 destination = flight.destinationCode,
-                airline = flight.airlineIata ?: flight.airlineName ?: "",
+                airline = flight.airlineName ?: flight.airlineIata ?: flight.flightNumber.replace(Regex("\\d+$"), ""),
                 departureDate = flight.scheduledDeparture,
-                user = BackendShareUser(id = userId, displayName = displayName)
+                user = BackendShareUser(id = userId, displayName = displayName),
+                permissions = BackendSharePermissions(),
+                expiryHours = 48
             )
+            val requestJson = json.encodeToString(request)
+            Log.d("ShareFlight", "Request body: $requestJson")
+
             val response = api.createSharedFlight(request)
+            Log.d("ShareFlight", "Response code: ${response.code()}")
             if (response.isSuccessful) {
-                val shareCode = response.body()?.shareCode
+                val shareCode = response.body()?.sharedFlight?.shareCode ?: response.body()?.shareCode
                 if (shareCode != null) {
                     // Cache locally
                     sharedFlightDao.insertSharedFlight(
@@ -459,7 +467,12 @@ class FlightRepository @Inject constructor(
                             destination = flight.destinationCode,
                             airline = flight.airlineName,
                             status = flight.rawStatus,
-                            departureDate = flight.scheduledDeparture
+                            departureDate = flight.scheduledDeparture,
+                            arrivalDate = flight.scheduledArrival,
+                            departureDelay = flight.departureDelay,
+                            arrivalDelay = flight.arrivalDelay,
+                            departureGate = flight.departureGate,
+                            arrivalGate = flight.arrivalGate
                         )
                     )
                     Result.success(shareCode)
@@ -467,7 +480,9 @@ class FlightRepository @Inject constructor(
                     Result.failure(Exception("No share code returned"))
                 }
             } else {
-                Result.failure(Exception("Share failed: ${response.code()}"))
+                val errorBody = response.errorBody()?.string()
+                Log.e("ShareFlight", "Share failed: ${response.code()} — $errorBody")
+                Result.failure(Exception("Share failed: ${response.code()} — $errorBody"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -476,19 +491,31 @@ class FlightRepository @Inject constructor(
 
     suspend fun joinSharedFlight(shareCode: String): Result<SharedFlightEntity?> {
         return try {
-            val response = api.joinSharedFlight(shareCode)
+            Log.d("ShareFlight", "Joining share: $shareCode")
+            val joinRequest = BackendJoinRequest(
+                user = BackendShareUser(id = "android-user")
+            )
+            val response = api.joinSharedFlight(shareCode, joinRequest)
+            Log.d("ShareFlight", "Join response: ${response.code()}")
             if (response.isSuccessful) {
                 val sf = response.body()?.sharedFlight
+                Log.d("ShareFlight", "Join sharedFlight: $sf")
                 if (sf != null) {
                     val entity = SharedFlightEntity(
                         id = sf.id,
                         flightIdent = sf.flightIdent,
                         shareCode = sf.shareCode,
-                        sharedByName = sf.sharedBy?.displayName,
+                        sharedByName = sf.sharedBy,
                         origin = sf.origin,
                         destination = sf.destination,
                         airline = sf.airline,
-                        status = sf.status
+                        status = sf.status,
+                        departureDate = sf.departureDate,
+                        arrivalDate = sf.arrivalDate,
+                        departureDelay = sf.departureDelay,
+                        arrivalDelay = sf.arrivalDelay,
+                        departureGate = sf.departureGate,
+                        arrivalGate = sf.arrivalGate
                     )
                     sharedFlightDao.insertSharedFlight(entity)
                     Result.success(entity)
@@ -496,24 +523,24 @@ class FlightRepository @Inject constructor(
                     Result.success(null)
                 }
             } else {
-                Result.failure(Exception("Join failed: ${response.code()}"))
+                val errorBody = response.errorBody()?.string()
+                Log.e("ShareFlight", "Join failed: ${response.code()} — $errorBody")
+                Result.failure(Exception("Join failed: ${response.code()} — $errorBody"))
             }
         } catch (e: Exception) {
+            Log.e("ShareFlight", "Join exception", e)
             Result.failure(e)
         }
     }
 
     suspend fun stopSharedFlight(shareCode: String): Result<Unit> {
+        // Remove locally first so the UI updates immediately
+        sharedFlightDao.deactivateSharedFlight(shareCode)
         return try {
-            val response = api.stopSharedFlight(shareCode)
-            if (response.isSuccessful) {
-                sharedFlightDao.deactivateSharedFlight(shareCode)
-                Result.success(Unit)
-            } else {
-                Result.failure(Exception("Stop sharing failed: ${response.code()}"))
-            }
+            api.stopSharedFlight(shareCode)
+            Result.success(Unit)
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.success(Unit)
         }
     }
 
@@ -546,9 +573,9 @@ class FlightRepository @Inject constructor(
                 flightNumber = bf.flightNumber,
                 originCode = bf.origin?.resolvedCode ?: "",
                 destinationCode = bf.destination?.resolvedCode ?: "",
-                airlineName = bf.airline?.name,
-                airlineIata = bf.airline?.iata,
-                airlineIcao = bf.airline?.icao,
+                airlineName = bf.airline?.name ?: bf.operator?.name,
+                airlineIata = bf.airline?.iata ?: bf.operator?.iata,
+                airlineIcao = bf.airline?.icao ?: bf.operator?.icao,
                 status = bf.status,
                 scheduledDeparture = bf.departure?.scheduled ?: bf.schedule?.departure?.scheduled,
                 scheduledArrival = bf.arrival?.scheduled ?: bf.schedule?.arrival?.scheduled,

@@ -143,7 +143,7 @@ interface TrueSkiesApi {
 
     // ── Shared Flights (iOS) ──
 
-    @POST("/api/shared-flights/create")
+    @POST("/api/shared-flights")
     suspend fun createSharedFlight(
         @Body request: BackendShareRequest
     ): Response<BackendSharedFlightResponse>
@@ -155,7 +155,8 @@ interface TrueSkiesApi {
 
     @POST("/api/shared-flights/{shareCode}/join")
     suspend fun joinSharedFlight(
-        @Path("shareCode") shareCode: String
+        @Path("shareCode") shareCode: String,
+        @Body request: BackendJoinRequest
     ): Response<BackendSharedFlightResponse>
 
     @POST("/api/shared-flights/{shareCode}/stop")

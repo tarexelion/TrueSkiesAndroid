@@ -151,4 +151,37 @@ class FlightDetailViewModel @Inject constructor(
     fun refresh() {
         loadFlightDetails()
     }
+
+    // ── Share ────────────────────────────────────────────────
+
+    private val _shareResult = MutableStateFlow<ShareFlightResult>(ShareFlightResult.Idle)
+    val shareResult: StateFlow<ShareFlightResult> = _shareResult.asStateFlow()
+
+    fun createShare() {
+        val flight = _uiState.value.flight ?: return
+        viewModelScope.launch {
+            _shareResult.value = ShareFlightResult.Loading
+            val result = repository.createSharedFlight(
+                flight = flight,
+                userId = "android-user",
+                displayName = null
+            )
+            _shareResult.value = result.fold(
+                onSuccess = { shareCode ->
+                    ShareFlightResult.Success(
+                        shareCode = shareCode,
+                        flightIdent = flight.flightNumber,
+                        origin = flight.originCode,
+                        destination = flight.destinationCode,
+                        airlineName = flight.airlineName
+                    )
+                },
+                onFailure = { ShareFlightResult.Error(it.message ?: "Failed to create share") }
+            )
+        }
+    }
+
+    fun resetShareResult() {
+        _shareResult.value = ShareFlightResult.Idle
+    }
 }

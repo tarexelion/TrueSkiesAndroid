@@ -18,7 +18,7 @@ import com.trueskies.android.data.local.entities.SharedFlightEntity
         SharedFlightEntity::class,
         FlightEventEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class TrueSkiesDatabase : RoomDatabase() {

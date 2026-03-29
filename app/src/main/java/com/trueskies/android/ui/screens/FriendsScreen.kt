@@ -5,15 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,30 +22,71 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.*
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import com.trueskies.android.ui.components.LiquidGlassCard
+import com.trueskies.android.domain.models.PersonalFlight
+import com.trueskies.android.ui.components.FlightCard
 import com.trueskies.android.ui.theme.*
 import com.trueskies.android.ui.viewmodels.FriendsViewModel
+import com.trueskies.android.ui.viewmodels.JoinFlightResult
+import com.trueskies.android.ui.viewmodels.ShareFlightResult
+import com.trueskies.android.ui.viewmodels.SharedPersonalFlight
 
-/**
- * Friends tab — mirrors iOS FriendsFlightsView.
- * Shows shared flights from friends with invite/scan/paste actions.
- * Three states: empty, loading, populated.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendsScreen(
     onFlightClick: (String) -> Unit = {},
     viewModel: FriendsViewModel = hiltViewModel()
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showFlightSelector by remember { mutableStateOf(false) }
 
-    // QR scanner launcher
+    val personalFlights by viewModel.personalFlights.collectAsState()
+    val shareResult by viewModel.shareResult.collectAsState()
+    val joinResult by viewModel.joinResult.collectAsState()
+    val sharedFlights by viewModel.sharedFlightsAsPersonal.collectAsState()
+
+    // Handle share result — open share sheet when backend returns a share code
+    LaunchedEffect(shareResult) {
+        when (val result = shareResult) {
+            is ShareFlightResult.Success -> {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Track ${result.flightIdent} on TrueSkies")
+                    putExtra(Intent.EXTRA_TEXT, result.shareText)
+                }
+                context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                viewModel.resetShareResult()
+            }
+            is ShareFlightResult.Error -> {
+                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                viewModel.resetShareResult()
+            }
+            else -> {}
+        }
+    }
+
+    // Handle join result
+    LaunchedEffect(joinResult) {
+        when (val result = joinResult) {
+            is JoinFlightResult.Success -> {
+                Toast.makeText(context, "Flight added!", Toast.LENGTH_SHORT).show()
+                viewModel.resetJoinResult()
+            }
+            is JoinFlightResult.Error -> {
+                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                viewModel.resetJoinResult()
+            }
+            else -> {}
+        }
+    }
+
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val code = result.contents
         if (code != null) {
@@ -61,472 +99,354 @@ fun FriendsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TrueSkiesColors.SurfacePrimary)
-            .statusBarsPadding()
-    ) {
-        // Large navigation title — mirrors iOS .navigationBarTitleDisplayMode(.large)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = TrueSkiesSpacing.lg,
-                    end = TrueSkiesSpacing.lg,
-                    top = TrueSkiesSpacing.md,
-                    bottom = TrueSkiesSpacing.sm
-                )
-        ) {
-            Text(
-                text = "Friends",
-                style = TrueSkiesTypography.displayMedium,
-                color = TrueSkiesColors.TextPrimary
-            )
-        }
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(38.5, 30.0), 5f)
+    }
 
-        when {
-            state.isLoading -> FriendsLoadingState()
-            state.sharedFlights.isNotEmpty() -> FriendsPopulatedState(
-                sharedFlights = state.sharedFlights,
-                onFlightClick = onFlightClick,
-                onShareTap = { shareMyFlight(context) },
-                onScanQR = { launchQRScanner(scanLauncher) },
+    val scaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            initialValue = SheetValue.PartiallyExpanded
+        )
+    )
+
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
+        sheetContent = {
+            FriendsSheetContent(
+                sharedFlights = sharedFlights,
+                onScanQR = {
+                    scanLauncher.launch(
+                        ScanOptions().apply {
+                            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            setPrompt("Scan a TrueSkies flight QR code")
+                            setBeepEnabled(false)
+                            setOrientationLocked(false)
+                        }
+                    )
+                },
                 onPasteLink = { pasteShareLink(context, viewModel) },
-                onRemoveFlight = { viewModel.removeSharedFlight(it) }
+                onShare = {
+                    if (personalFlights.isEmpty()) {
+                        Toast.makeText(context, "Add a flight first to share it", Toast.LENGTH_SHORT).show()
+                    } else {
+                        showFlightSelector = true
+                    }
+                },
+                isSharing = shareResult is ShareFlightResult.Loading,
+                onFlightClick = onFlightClick,
+                onDeleteFlight = { viewModel.removeSharedFlight(it.entity.shareCode) }
             )
-            else -> FriendsEmptyState(
-                onShareTap = { shareMyFlight(context) },
-                onScanQR = { launchQRScanner(scanLauncher) },
-                onPasteLink = { pasteShareLink(context, viewModel) }
+        },
+        sheetPeekHeight = 200.dp,
+        sheetShape = RoundedCornerShape(
+            topStart = TrueSkiesCornerRadius.xl,
+            topEnd = TrueSkiesCornerRadius.xl
+        ),
+        sheetContainerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
+        sheetDragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = TrueSkiesColors.TextMuted.copy(alpha = 0.4f)
+            )
+        },
+        sheetTonalElevation = 0.dp,
+        sheetShadowElevation = 20.dp,
+        containerColor = Color.Transparent
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                properties = MapProperties(
+                    mapType = MapType.HYBRID,
+                    isMyLocationEnabled = false
+                ),
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    myLocationButtonEnabled = false,
+                    compassEnabled = false
+                )
             )
         }
     }
+
+    // Flight selector dialog
+    if (showFlightSelector) {
+        FlightSelectorDialog(
+            flights = personalFlights,
+            onFlightSelected = { personalFlight ->
+                showFlightSelector = false
+                viewModel.createShareForFlight(personalFlight)
+            },
+            onDismiss = { showFlightSelector = false }
+        )
+    }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Empty State — mirrors iOS FriendsEmptyStateView
-// ─────────────────────────────────────────────────────────────
-
 @Composable
-private fun FriendsEmptyState(
-    onShareTap: () -> Unit,
-    onScanQR: () -> Unit,
-    onPasteLink: () -> Unit
+private fun FlightSelectorDialog(
+    flights: List<PersonalFlight>,
+    onFlightSelected: (PersonalFlight) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = TrueSkiesSpacing.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.People,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint = TrueSkiesColors.AccentBlue.copy(alpha = 0.7f)
-        )
-
-        Spacer(modifier = Modifier.height(TrueSkiesSpacing.md))
-
-        Text(
-            text = "Share & Track Together",
-            style = TrueSkiesTypography.headlineSmall,
-            color = TrueSkiesColors.TextPrimary,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(TrueSkiesSpacing.xs))
-
-        Text(
-            text = "Share your flight with friends or join theirs. You'll see each other on the map in real time.",
-            style = TrueSkiesTypography.bodyMedium,
-            color = TrueSkiesColors.TextSecondary,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(TrueSkiesSpacing.xl))
-
-        // Primary action — Share your flights
-        Button(
-            onClick = onShareTap,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(TrueSkiesCornerRadius.xl),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = TrueSkiesColors.AccentBlue,
-                contentColor = Color.White
-            ),
-            contentPadding = PaddingValues(vertical = TrueSkiesSpacing.md)
-        ) {
-            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(TrueSkiesSpacing.xs))
-            Text("Share your flights", style = TrueSkiesTypography.labelLarge, fontWeight = FontWeight.SemiBold)
-        }
-
-        Spacer(modifier = Modifier.height(TrueSkiesSpacing.md))
-
-        // Secondary actions row — Scan QR + Paste Link
-        LiquidGlassCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(TrueSkiesSpacing.sm),
-                horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.sm)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TrueSkiesColors.SurfacePrimary,
+        titleContentColor = TrueSkiesColors.TextPrimary,
+        title = {
+            Text(
+                text = "Select a flight to share",
+                style = TrueSkiesTypography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xs)
             ) {
-                // Scan QR
-                OutlinedButton(
-                    onClick = onScanQR,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(TrueSkiesCornerRadius.xl),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = TrueSkiesColors.TextPrimary
+                items(flights, key = { it.localId }) { pf ->
+                    FlightSelectorRow(
+                        personalFlight = pf,
+                        onClick = { onFlightSelected(pf) }
                     )
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(22.dp))
-                        Text("Scan QR", style = TrueSkiesTypography.labelMedium)
-                    }
-                }
-
-                // Paste link
-                OutlinedButton(
-                    onClick = onPasteLink,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(TrueSkiesCornerRadius.xl),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = TrueSkiesColors.TextPrimary
-                    )
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(22.dp))
-                        Text("Paste Link", style = TrueSkiesTypography.labelMedium)
-                    }
                 }
             }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TrueSkiesColors.TextSecondary)
+            }
         }
-
-        Spacer(modifier = Modifier.height(TrueSkiesSpacing.xxl))
-
-        // Feature preview section — mirrors iOS FriendsFeatureRow
-        Column(verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.md)) {
-            FriendsFeatureRow(
-                icon = Icons.Default.Visibility,
-                title = "Real-time tracking",
-                description = "See friends' flights live on the map"
-            )
-            FriendsFeatureRow(
-                icon = Icons.Default.Notifications,
-                title = "Flight updates",
-                description = "Get notified about delays and gate changes"
-            )
-            FriendsFeatureRow(
-                icon = Icons.Default.QrCode,
-                title = "Easy sharing",
-                description = "Share via QR code or link"
-            )
-        }
-    }
+    )
 }
 
 @Composable
-private fun FriendsFeatureRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String
+private fun FlightSelectorRow(
+    personalFlight: PersonalFlight,
+    onClick: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.md)
+    val flight = personalFlight.flight
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(TrueSkiesCornerRadius.md),
+        colors = CardDefaults.cardColors(containerColor = TrueSkiesColors.SurfaceElevated)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(TrueSkiesCornerRadius.sm))
-                .background(TrueSkiesColors.AccentBlue.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.padding(TrueSkiesSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.sm)
         ) {
             Icon(
-                icon,
+                imageVector = Icons.Default.Flight,
                 contentDescription = null,
                 tint = TrueSkiesColors.AccentBlue,
                 modifier = Modifier.size(20.dp)
             )
-        }
-        Column {
-            Text(title, style = TrueSkiesTypography.titleSmall, color = TrueSkiesColors.TextPrimary)
-            Text(description, style = TrueSkiesTypography.bodySmall, color = TrueSkiesColors.TextTertiary)
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Loading State — mirrors iOS FriendsLoadingStateView
-// ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun FriendsLoadingState() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(TrueSkiesSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.sm)
-    ) {
-        // Shimmer skeleton cards
-        repeat(3) { index ->
-            LiquidGlassCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(TrueSkiesSpacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.md)
-                ) {
-                    // Avatar placeholder
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(TrueSkiesColors.SurfaceElevated)
-                    )
-                    // Text placeholders
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xs)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.5f)
-                                .height(14.dp)
-                                .clip(RoundedCornerShape(TrueSkiesCornerRadius.xxs))
-                                .background(TrueSkiesColors.SurfaceElevated)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.7f)
-                                .height(12.dp)
-                                .clip(RoundedCornerShape(TrueSkiesCornerRadius.xxs))
-                                .background(TrueSkiesColors.SurfaceElevated.copy(alpha = 0.6f))
-                        )
-                    }
-                    // Status placeholder
-                    Box(
-                        modifier = Modifier
-                            .width(60.dp)
-                            .height(10.dp)
-                            .clip(RoundedCornerShape(TrueSkiesCornerRadius.xxs))
-                            .background(TrueSkiesColors.SurfaceElevated.copy(alpha = 0.4f))
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Populated State — mirrors iOS FriendsPopulatedStateView
-// ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun FriendsPopulatedState(
-    sharedFlights: List<SharedFlightUiItem>,
-    onFlightClick: (String) -> Unit,
-    onShareTap: () -> Unit,
-    onScanQR: () -> Unit,
-    onPasteLink: () -> Unit,
-    onRemoveFlight: (String) -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = TrueSkiesSpacing.md, vertical = TrueSkiesSpacing.sm),
-        verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.sm)
-    ) {
-        // Action buttons row at top
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xs)
-            ) {
-                ActionChip(
-                    label = "Share",
-                    icon = Icons.Default.Share,
-                    onClick = onShareTap,
-                    modifier = Modifier.weight(1f)
-                )
-                ActionChip(
-                    label = "Scan",
-                    icon = Icons.Default.QrCodeScanner,
-                    onClick = onScanQR,
-                    modifier = Modifier.weight(1f)
-                )
-                ActionChip(
-                    label = "Paste",
-                    icon = Icons.Default.ContentPaste,
-                    onClick = onPasteLink,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // Shared flight cards
-        items(sharedFlights, key = { it.id }) { flight ->
-            SharedFlightCard(
-                flight = flight,
-                onClick = { onFlightClick(flight.flightId) }
-            )
-        }
-
-        // Empty sub-state when friends exist but no active flights
-        if (sharedFlights.isEmpty()) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = TrueSkiesSpacing.xxl),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Default.FlightTakeoff,
-                        contentDescription = null,
-                        tint = TrueSkiesColors.TextMuted,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(Modifier.height(TrueSkiesSpacing.sm))
-                    Text(
-                        "No active flights",
-                        style = TrueSkiesTypography.titleMedium,
-                        color = TrueSkiesColors.TextSecondary
-                    )
-                    Text(
-                        "Friends' flights will appear here when they share",
-                        style = TrueSkiesTypography.bodySmall,
-                        color = TrueSkiesColors.TextMuted,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActionChip(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(TrueSkiesCornerRadius.pill),
-        color = TrueSkiesColors.GlassBackground
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = TrueSkiesSpacing.sm, vertical = TrueSkiesSpacing.xs),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = TrueSkiesColors.AccentBlue)
-            Spacer(Modifier.width(TrueSkiesSpacing.xxs))
-            Text(label, style = TrueSkiesTypography.labelSmall, color = TrueSkiesColors.TextPrimary)
-        }
-    }
-}
-
-@Composable
-private fun SharedFlightCard(
-    flight: SharedFlightUiItem,
-    onClick: () -> Unit
-) {
-    LiquidGlassCard(modifier = Modifier.clickable(onClick = onClick)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(TrueSkiesSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.md)
-        ) {
-            // Friend avatar
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(TrueSkiesColors.AccentCyan.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = flight.friendName.firstOrNull()?.uppercase() ?: "?",
-                    style = TrueSkiesTypography.titleMedium,
-                    color = TrueSkiesColors.AccentCyan,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Flight info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = flight.friendName,
-                    style = TrueSkiesTypography.titleSmall,
+                    text = flight.displayFlightNumber,
+                    style = TrueSkiesTypography.bodyMedium,
                     color = TrueSkiesColors.TextPrimary,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${flight.flightNumber}  ${flight.origin} → ${flight.destination}",
-                    style = TrueSkiesTypography.bodyMedium,
+                    text = "${flight.originCode} → ${flight.destinationCode}",
+                    style = TrueSkiesTypography.bodySmall,
                     color = TrueSkiesColors.TextSecondary
                 )
             }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = TrueSkiesColors.TextMuted,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
 
-            // Status badge
-            Surface(
-                shape = RoundedCornerShape(TrueSkiesCornerRadius.badge),
-                color = flight.statusColor.copy(alpha = 0.15f)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FriendsSheetContent(
+    sharedFlights: List<SharedPersonalFlight>,
+    onScanQR: () -> Unit,
+    onPasteLink: () -> Unit,
+    onShare: () -> Unit,
+    isSharing: Boolean = false,
+    onFlightClick: (String) -> Unit = {},
+    onDeleteFlight: (SharedPersonalFlight) -> Unit = {}
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = TrueSkiesSpacing.lg, vertical = TrueSkiesSpacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Title
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.People,
+                contentDescription = null,
+                tint = TrueSkiesColors.TextPrimary,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(TrueSkiesSpacing.xs))
+            Text(
+                text = if (sharedFlights.isNotEmpty())
+                    "${sharedFlights.size} flight${if (sharedFlights.size > 1) "s" else ""} shared"
+                else "Share & track together",
+                style = TrueSkiesTypography.titleMedium,
+                color = TrueSkiesColors.TextPrimary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Spacer(Modifier.height(TrueSkiesSpacing.lg))
+
+        // Action buttons row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.sm)
+        ) {
+            // Scan button
+            Button(
+                onClick = onScanQR,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(TrueSkiesCornerRadius.pill),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TrueSkiesColors.SurfaceElevated,
+                    contentColor = TrueSkiesColors.TextPrimary
+                ),
+                contentPadding = PaddingValues(vertical = 14.dp)
             ) {
-                Text(
-                    text = flight.statusText,
-                    style = TrueSkiesTypography.labelSmall,
-                    color = flight.statusColor,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = TrueSkiesSpacing.xs, vertical = TrueSkiesSpacing.xxs)
+                Icon(
+                    Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
+                Spacer(Modifier.width(TrueSkiesSpacing.xxs))
+                Text("Scan", style = TrueSkiesTypography.labelLarge)
+            }
+
+            // Paste button
+            Button(
+                onClick = onPasteLink,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(TrueSkiesCornerRadius.pill),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TrueSkiesColors.SurfaceElevated,
+                    contentColor = TrueSkiesColors.TextPrimary
+                ),
+                contentPadding = PaddingValues(vertical = 14.dp)
+            ) {
+                Icon(
+                    Icons.Default.Link,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(TrueSkiesSpacing.xxs))
+                Text("Paste", style = TrueSkiesTypography.labelLarge)
+            }
+
+            // Share button (primary/blue)
+            Button(
+                onClick = onShare,
+                enabled = !isSharing,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(TrueSkiesCornerRadius.pill),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TrueSkiesColors.AccentBlue,
+                    contentColor = Color.White
+                ),
+                contentPadding = PaddingValues(vertical = 14.dp)
+            ) {
+                if (isSharing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(Modifier.width(TrueSkiesSpacing.xxs))
+                Text("Share", style = TrueSkiesTypography.labelLarge)
             }
         }
+
+        // Shared flights list — using the same FlightCard as My Flights
+        if (sharedFlights.isNotEmpty()) {
+            Spacer(Modifier.height(TrueSkiesSpacing.lg))
+
+            sharedFlights.forEach { item ->
+                key(item.entity.id) {
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            if (value == SwipeToDismissBoxValue.EndToStart) {
+                                onDeleteFlight(item)
+                            }
+                            // Always return false so the card snaps back;
+                            // the actual removal happens via the Flow update
+                            false
+                        }
+                    )
+
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        backgroundContent = {
+                            val color by animateColorAsState(
+                                when (dismissState.targetValue) {
+                                    SwipeToDismissBoxValue.EndToStart -> TrueSkiesColors.StatusCancelled
+                                    else -> Color.Transparent
+                                },
+                                label = "swipeBg"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(TrueSkiesCornerRadius.lg))
+                                    .background(color)
+                                    .padding(horizontal = TrueSkiesSpacing.xl),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Remove",
+                                    tint = Color.White
+                                )
+                            }
+                        },
+                        enableDismissFromStartToEnd = false,
+                        enableDismissFromEndToStart = true
+                    ) {
+                        FlightCard(
+                            personalFlight = item.personalFlight,
+                            onClick = { onFlightClick(item.entity.id) }
+                        )
+                    }
+
+                    Spacer(Modifier.height(TrueSkiesSpacing.xs))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(TrueSkiesSpacing.md))
     }
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helper functions
 // ─────────────────────────────────────────────────────────────
-
-private fun shareMyFlight(context: Context) {
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "Track my flight on TrueSkies")
-        putExtra(
-            Intent.EXTRA_TEXT,
-            "Track my flight in real time on TrueSkies!\nhttps://trueskiesapp.com/share"
-        )
-    }
-    context.startActivity(Intent.createChooser(shareIntent, "Share via"))
-}
-
-private fun launchQRScanner(scanLauncher: androidx.activity.result.ActivityResultLauncher<ScanOptions>) {
-    scanLauncher.launch(
-        ScanOptions().apply {
-            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            setPrompt("Scan a TrueSkies flight QR code")
-            setBeepEnabled(false)
-            setOrientationLocked(false)
-        }
-    )
-}
 
 private fun pasteShareLink(context: Context, viewModel: FriendsViewModel) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -539,37 +459,16 @@ private fun pasteShareLink(context: Context, viewModel: FriendsViewModel) {
     }
 }
 
-/**
- * Extracts a share code from a TrueSkies share URL or raw code.
- * Handles: "https://trueskiesapp.com/share/ABC123", "/share/ABC123", or bare "ABC123".
- */
 private fun extractShareCode(input: String): String? {
     val trimmed = input.trim()
     if (trimmed.isBlank()) return null
-    val urlMatch = Regex("""trueskiesapp\.com/share/([A-Za-z0-9]+)|/share/([A-Za-z0-9]+)""").find(trimmed)
-    if (urlMatch != null) return urlMatch.groupValues[1].ifEmpty { urlMatch.groupValues[2] }
-    // Try bare flight code
+    // Query param format: ?code=ABC123 or &code=ABC123
+    val queryMatch = Regex("""[?&]code=([A-Za-z0-9]+)""").find(trimmed)
+    if (queryMatch != null) return queryMatch.groupValues[1]
+    // Legacy path format: /share/ABC123
+    val pathMatch = Regex("""trueskiesapp\.com/share/([A-Za-z0-9]+)""").find(trimmed)
+    if (pathMatch != null) return pathMatch.groupValues[1]
+    // Raw share code
     if (Regex("""^[A-Za-z0-9]{4,12}$""").matches(trimmed)) return trimmed
     return null
 }
-
-// ─────────────────────────────────────────────────────────────
-// UI Data models
-// ─────────────────────────────────────────────────────────────
-
-data class SharedFlightUiItem(
-    val id: String,
-    val flightId: String,
-    val friendName: String,
-    val flightNumber: String,
-    val origin: String,
-    val destination: String,
-    val statusText: String,
-    val statusColor: Color
-)
-
-data class FriendsUiState(
-    val isLoading: Boolean = false,
-    val sharedFlights: List<SharedFlightUiItem> = emptyList(),
-    val error: String? = null
-)

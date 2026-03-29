@@ -187,7 +187,13 @@ private fun LeftStateColumn(flight: Flight, status: FlightStatus) {
             )
         }
         status.isAirborne || status == FlightStatus.DEPARTED || status == FlightStatus.TAXIING_OUT -> {
-            InFlightDisplay()
+            // If arrival time has passed, show LANDED instead of IN FLIGHT
+            val arrTime = parseIso(flight.bestArrivalTime)
+            if (arrTime != null && ZonedDateTime.now().isAfter(arrTime)) {
+                LandedDisplay()
+            } else {
+                InFlightDisplay()
+            }
         }
         status == FlightStatus.ARRIVED || status == FlightStatus.LANDED ||
         status == FlightStatus.COMPLETED || status == FlightStatus.TAXIING_IN -> {
@@ -340,6 +346,30 @@ private fun InFlightDisplay() {
     }
 }
 
+@Composable
+private fun LandedDisplay() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            Icons.Default.Flight,
+            contentDescription = null,
+            tint = TrueSkiesColors.StatusOnTime,
+            modifier = Modifier
+                .size(28.dp)
+                .graphicsLayer { rotationZ = 90f }
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "LANDED",
+            style = TrueSkiesTypography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp,
+                fontSize = 10.sp
+            ),
+            color = TrueSkiesColors.StatusOnTime
+        )
+    }
+}
+
 // ── Airline logo / initials avatar ──
 
 @Composable
@@ -449,8 +479,17 @@ private fun statusText(flight: Flight, status: FlightStatus): String {
         FlightStatus.DEPARTED -> {
             val arrTime = flight.bestArrivalTime
             if (arrTime != null) {
-                val time = formatTime(arrTime, flight.destinationTimezone)
-                "Arrives $time"
+                val zdt = parseIso(arrTime)
+                if (zdt != null && ZonedDateTime.now().isAfter(zdt)) {
+                    // Arrival time has passed — show as arrived
+                    val localZdt = if (flight.destinationTimezone != null) {
+                        zdt.withZoneSameInstant(java.time.ZoneId.of(flight.destinationTimezone))
+                    } else zdt
+                    "Arrived ${localZdt.format(DateTimeFormatter.ofPattern("HH:mm"))}"
+                } else {
+                    val time = formatTime(arrTime, flight.destinationTimezone)
+                    "Arrives $time"
+                }
             } else "In Flight"
         }
         else -> status.displayName
@@ -466,7 +505,15 @@ private fun statusTextColor(flight: Flight, status: FlightStatus): Color {
         FlightStatus.EN_ROUTE, FlightStatus.CRUISE, FlightStatus.APPROACH,
         FlightStatus.CLIMB, FlightStatus.TAKEOFF, FlightStatus.LANDING,
         FlightStatus.DEPARTED, FlightStatus.TAXIING_OUT,
-        FlightStatus.TAXIING_IN -> TrueSkiesColors.StatusActive
+        FlightStatus.TAXIING_IN -> {
+            // If arrival time has passed, use arrived color
+            val arrTime = parseIso(flight.bestArrivalTime)
+            if (arrTime != null && ZonedDateTime.now().isAfter(arrTime)) {
+                TrueSkiesColors.StatusOnTime
+            } else {
+                TrueSkiesColors.StatusActive
+            }
+        }
         FlightStatus.SCHEDULED, FlightStatus.FILING -> if ((flight.departureDelay ?: 0) > 0)
             TrueSkiesColors.StatusDelayed else TrueSkiesColors.StatusOnTime
         else -> TrueSkiesColors.TextSecondary

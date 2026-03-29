@@ -96,7 +96,7 @@ data class FlightShareLink(
     val flightIdent: String
 ) {
     val url: String
-        get() = "https://trueskiesapp.com/share/$shareCode"
+        get() = "https://trueskiesapp.com/share/?flight=${java.net.URLEncoder.encode(flightIdent, "UTF-8")}&code=${java.net.URLEncoder.encode(shareCode, "UTF-8")}"
 
     val shareText: String
         get() = "Track my flight $flightIdent on TrueSkies! $url"
@@ -105,6 +105,16 @@ data class FlightShareLink(
         /** Parse a share code from a URL or raw text */
         fun parse(from: String): FlightShareLink? {
             val trimmed = from.trim()
+            // Match query-param format: ?flight=...&code=...
+            val codeMatch = Regex("""[?&]code=([A-Za-z0-9]+)""").find(trimmed)
+            val flightMatch = Regex("""[?&]flight=([A-Za-z0-9]+)""").find(trimmed)
+            if (codeMatch != null) {
+                return FlightShareLink(
+                    shareCode = codeMatch.groupValues[1],
+                    flightIdent = flightMatch?.groupValues?.get(1) ?: ""
+                )
+            }
+            // Legacy path format: /share/CODE
             val urlMatch = Regex("""trueskiesapp\.com/share/([A-Za-z0-9]+)""").find(trimmed)
             if (urlMatch != null) {
                 return FlightShareLink(shareCode = urlMatch.groupValues[1], flightIdent = "")

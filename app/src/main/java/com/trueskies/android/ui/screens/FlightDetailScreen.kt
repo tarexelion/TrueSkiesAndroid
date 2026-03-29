@@ -42,7 +42,9 @@ import com.trueskies.android.domain.models.WeatherInfo
 import com.trueskies.android.ui.components.FlightStatusBadge
 import com.trueskies.android.ui.components.LiquidGlassCard
 import com.trueskies.android.ui.theme.*
+import android.widget.Toast
 import com.trueskies.android.ui.viewmodels.FlightDetailViewModel
+import com.trueskies.android.ui.viewmodels.ShareFlightResult
 import kotlinx.coroutines.delay
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -131,6 +133,7 @@ fun FlightDetailScreen(
         if (showShareSheet && uiState.flight != null) {
             ShareBottomSheet(
                 flight = uiState.flight!!,
+                viewModel = viewModel,
                 onDismiss = { showShareSheet = false }
             )
         }
@@ -1632,17 +1635,44 @@ private fun VisaRequirementCard() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ShareBottomSheet(flight: Flight, onDismiss: () -> Unit) {
+private fun ShareBottomSheet(
+    flight: Flight,
+    viewModel: FlightDetailViewModel,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
     var showQrDialog by remember { mutableStateOf(false) }
+    val shareResult by viewModel.shareResult.collectAsStateWithLifecycle()
 
-    val flightUrl = "https://trueskiesapp.com/flight/${flight.id}"
-    val shareText = buildString {
+    // When backend returns a share, build URL from it; otherwise fall back to static
+    val shareSuccess = shareResult as? ShareFlightResult.Success
+    val flightUrl = shareSuccess?.shareUrl
+        ?: "https://trueskiesapp.com/share/?flight=${java.net.URLEncoder.encode(flight.flightNumber, "UTF-8")}&origin=${java.net.URLEncoder.encode(flight.originCode, "UTF-8")}&destination=${java.net.URLEncoder.encode(flight.destinationCode, "UTF-8")}"
+    val shareText = shareSuccess?.shareText ?: buildString {
         appendLine("✈ ${flight.displayFlightNumber}")
         appendLine("${flight.originCode} → ${flight.destinationCode}")
         flight.airlineName?.let { appendLine(it) }
         appendLine(flightUrl)
     }.trim()
+
+    // Auto-create the backend share when sheet opens
+    LaunchedEffect(Unit) {
+        if (shareResult is ShareFlightResult.Idle) {
+            viewModel.createShare()
+        }
+    }
+
+    // Handle errors
+    LaunchedEffect(shareResult) {
+        if (shareResult is ShareFlightResult.Error) {
+            Toast.makeText(context, (shareResult as ShareFlightResult.Error).message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Clean up on dismiss
+    DisposableEffect(Unit) {
+        onDispose { viewModel.resetShareResult() }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
