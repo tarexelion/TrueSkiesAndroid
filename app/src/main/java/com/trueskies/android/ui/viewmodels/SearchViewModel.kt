@@ -6,6 +6,8 @@ import com.trueskies.android.data.repository.FlightRepository
 import com.trueskies.android.domain.models.Flight
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +51,9 @@ class SearchViewModel @Inject constructor(
         val query = _uiState.value.query
         if (query.isNotEmpty()) {
             searchJob?.cancel()
+            // Set isSearching synchronously so the UI knows immediately
+            // (before the coroutine starts and before the keyboard hides)
+            _uiState.value = _uiState.value.copy(isSearching = true, error = null)
             searchJob = viewModelScope.launch {
                 performSearch(query)
             }
@@ -60,11 +65,14 @@ class SearchViewModel @Inject constructor(
         val result = repository.searchFlights(query)
         result.fold(
             onSuccess = { flights ->
+                // Show results immediately
                 _uiState.value = _uiState.value.copy(
                     results = flights,
                     isSearching = false,
                     hasSearched = true
                 )
+                // Enrich flights that have missing airport codes in the background
+                enrichFlights(flights)
             },
             onFailure = { e ->
                 _uiState.value = _uiState.value.copy(
@@ -74,6 +82,32 @@ class SearchViewModel @Inject constructor(
                 )
             }
         )
+    }
+
+    private fun enrichFlights(flights: List<Flight>) {
+        val needsEnrichment = flights.filter {
+            it.originCode == "???" || it.destinationCode == "???"
+                    || (it.originCity == null && it.destinationCity == null)
+        }
+        if (needsEnrichment.isEmpty()) return
+
+        viewModelScope.launch {
+            val enriched = needsEnrichment.map { flight ->
+                async {
+                    repository.getFlightDetails(flight.id).getOrNull()?.let { detail ->
+                        flight.id to detail
+                    }
+                }
+            }.awaitAll().filterNotNull().toMap()
+
+            if (enriched.isNotEmpty()) {
+                val currentState = _uiState.value
+                val updatedResults = currentState.results.map { flight ->
+                    enriched[flight.id] ?: flight
+                }
+                _uiState.value = currentState.copy(results = updatedResults)
+            }
+        }
     }
 
     fun addToPersonalFlights(flight: Flight) {

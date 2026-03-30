@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,7 @@ class UserPreferencesRepository @Inject constructor(
         val USE_24_HOUR_TIME         = booleanPreferencesKey("use_24_hour_time")
         val NERVOUS_FLYER_ENABLED    = booleanPreferencesKey("nervous_flyer_enabled")
         val SHARE_DIAGNOSTICS        = booleanPreferencesKey("share_diagnostics")
+        val CITIZENSHIP_COUNTRY      = stringPreferencesKey("citizenship_country")
     }
 
     val notificationsEnabled: Flow<Boolean> =
@@ -52,6 +54,9 @@ class UserPreferencesRepository @Inject constructor(
 
     val shareDiagnostics: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.SHARE_DIAGNOSTICS] ?: true }
+
+    val citizenshipCountry: Flow<String> =
+        context.dataStore.data.map { it[Keys.CITIZENSHIP_COUNTRY] ?: "" }
 
     suspend fun setNotificationsEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.NOTIFICATIONS_ENABLED] = enabled }
@@ -83,5 +88,9 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setShareDiagnostics(enabled: Boolean) {
         context.dataStore.edit { it[Keys.SHARE_DIAGNOSTICS] = enabled }
+    }
+
+    suspend fun setCitizenshipCountry(country: String) {
+        context.dataStore.edit { it[Keys.CITIZENSHIP_COUNTRY] = country }
     }
 }

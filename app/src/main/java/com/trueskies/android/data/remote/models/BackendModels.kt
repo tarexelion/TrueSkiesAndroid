@@ -421,6 +421,19 @@ data class BackendLiveActivity(
     val terminal: String? = null
 )
 
+// ── Visa Check Response ──
+
+@Serializable
+data class VisaCheckResponse(
+    val success: Boolean? = null,
+    val passport: String? = null,
+    val destination: String? = null,
+    val requirement: String? = null,
+    val visaRequired: Boolean? = null,
+    val visaFree: Boolean? = null,
+    val timestamp: String? = null
+)
+
 // ── Error Response ──
 
 @Serializable

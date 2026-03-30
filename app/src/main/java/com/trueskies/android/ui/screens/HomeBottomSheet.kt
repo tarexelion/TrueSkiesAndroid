@@ -53,6 +53,7 @@ import com.trueskies.android.ui.viewmodels.SearchViewModel
 @Composable
 fun MyFlightsSheetContent(
     onFlightClick: (String) -> Unit,
+    onSearchActiveChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     flightsViewModel: FlightsViewModel = hiltViewModel(),
     searchViewModel: SearchViewModel = hiltViewModel()
@@ -60,16 +61,49 @@ fun MyFlightsSheetContent(
     val flightsState by flightsViewModel.uiState.collectAsStateWithLifecycle()
     val searchState by searchViewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
+
+    // Confirmation dialog state for swipe-to-delete
+    var pendingDeleteLocalId by remember { mutableStateOf<String?>(null) }
+
+    if (pendingDeleteLocalId != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteLocalId = null },
+            title = { Text("Remove Flight", color = TrueSkiesColors.TextPrimary) },
+            text = { Text("Are you sure you want to remove this flight?", color = TrueSkiesColors.TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteLocalId?.let { flightsViewModel.deleteFlight(it) }
+                    pendingDeleteLocalId = null
+                }) {
+                    Text("Remove", color = TrueSkiesColors.StatusCancelled)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteLocalId = null }) {
+                    Text("Cancel", color = TrueSkiesColors.AccentBlue)
+                }
+            },
+            containerColor = TrueSkiesColors.SurfaceElevated,
+            shape = RoundedCornerShape(TrueSkiesCornerRadius.xl)
+        )
+    }
     val isImeVisible = WindowInsets.isImeVisible
     val maxSheetHeight = if (isImeVisible) {
         (LocalConfiguration.current.screenHeightDp * 0.90f).dp
     } else {
-        (LocalConfiguration.current.screenHeightDp * 0.60f).dp
+        (LocalConfiguration.current.screenHeightDp * 0.85f).dp
     }
 
     // Determine if we're in "Add Flight" results mode
     val showAddFlightView = searchState.hasSearched && searchState.query.isNotEmpty()
             && searchState.results.isNotEmpty()
+    val isSearchActive = showAddFlightView || searchState.isSearching
+            || (searchState.hasSearched && searchState.query.isNotEmpty())
+
+    // Notify parent when search results are showing so the sheet stays expanded
+    LaunchedEffect(isSearchActive) {
+        onSearchActiveChanged(isSearchActive)
+    }
 
     Column(
         modifier = modifier
@@ -125,11 +159,15 @@ fun MyFlightsSheetContent(
                             color = section.color
                         )
                     }
-                    // Section flights
+                    // Section flights — auto-follow on tap, clear search, then navigate to detail
                     items(section.flights, key = { it.id }) { flight ->
                         SearchResultFlightCard(
                             flight = flight,
-                            onClick = { onFlightClick(flight.id) }
+                            onClick = {
+                                searchViewModel.addToPersonalFlights(flight)
+                                searchViewModel.updateQuery("")
+                                onFlightClick(flight.id)
+                            }
                         )
                     }
                 }
@@ -195,84 +233,113 @@ fun MyFlightsSheetContent(
             Spacer(modifier = Modifier.height(TrueSkiesSpacing.sm))
 
             // Content: loading → no results → personal flights → empty state
-            when {
-                searchState.isSearching -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = TrueSkiesColors.AccentBlue,
-                            modifier = Modifier.size(TrueSkiesSpacing.xl)
-                        )
-                    }
-                }
-
-                searchState.hasSearched && searchState.query.isNotEmpty() -> {
-                    // No results found
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(160.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No flights found",
-                            style = TrueSkiesTypography.bodyMedium,
-                            color = TrueSkiesColors.TextTertiary
-                        )
-                    }
-                }
-
-                flightsState.personalFlights.isNotEmpty() -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = TrueSkiesSpacing.md,
-                            end = TrueSkiesSpacing.md,
-                            bottom = TrueSkiesSpacing.xxl
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xs)
-                    ) {
-                        items(
-                            items = flightsState.personalFlights,
-                            key = { it.localId }
-                        ) { personalFlight ->
-                            FlightCard(
-                                personalFlight = personalFlight,
-                                onClick = { onFlightClick(personalFlight.flight.id) }
+            // Min height keeps the sheet from shrinking between states
+            Box(modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 160.dp)) {
+                when {
+                    searchState.isSearching -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = TrueSkiesColors.AccentBlue,
+                                modifier = Modifier.size(TrueSkiesSpacing.xl)
                             )
                         }
                     }
-                }
 
-                else -> {
-                    // Empty state — matches iOS FlightEmptyStateView
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                    searchState.hasSearched && searchState.query.isNotEmpty() -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.FlightTakeoff,
-                                contentDescription = null,
-                                modifier = Modifier.size(TrueSkiesSpacing.xxxl),
-                                tint = TrueSkiesColors.TextMuted.copy(alpha = 0.5f)
-                            )
-                            Spacer(modifier = Modifier.height(TrueSkiesSpacing.xs))
-                            Text(
-                                text = "Search a flight to start tracking",
-                                style = TrueSkiesTypography.bodyMedium,
-                                color = TrueSkiesColors.TextTertiary,
-                                textAlign = TextAlign.Center
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SearchOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(TrueSkiesSpacing.xxxl),
+                                    tint = TrueSkiesColors.TextMuted.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(TrueSkiesSpacing.xs))
+                                Text(
+                                    text = "No flights found",
+                                    style = TrueSkiesTypography.bodyMedium,
+                                    color = TrueSkiesColors.TextTertiary
+                                )
+                            }
+                        }
+                    }
+
+                    flightsState.personalFlights.isNotEmpty() -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = TrueSkiesSpacing.md,
+                                end = TrueSkiesSpacing.md,
+                                bottom = TrueSkiesSpacing.xxl
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xs)
+                        ) {
+                            items(
+                                items = flightsState.personalFlights,
+                                key = { it.localId }
+                            ) { personalFlight ->
+                                val dismissState = rememberSwipeToDismissBoxState(
+                                    confirmValueChange = { value ->
+                                        if (value == SwipeToDismissBoxValue.EndToStart) {
+                                            pendingDeleteLocalId = personalFlight.localId
+                                        }
+                                        false // never auto-dismiss; dialog handles deletion
+                                    }
+                                )
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    enableDismissFromStartToEnd = false,
+                                    enableDismissFromEndToStart = true,
+                                    backgroundContent = {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Transparent)
+                                        )
+                                    }
+                                ) {
+                                    FlightCard(
+                                        personalFlight = personalFlight,
+                                        onClick = { onFlightClick(personalFlight.flight.id) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        // Empty state — matches iOS FlightEmptyStateView
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FlightTakeoff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(TrueSkiesSpacing.xxxl),
+                                    tint = TrueSkiesColors.TextMuted.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(TrueSkiesSpacing.xs))
+                                Text(
+                                    text = "Search a flight to start tracking",
+                                    style = TrueSkiesTypography.bodyMedium,
+                                    color = TrueSkiesColors.TextTertiary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }

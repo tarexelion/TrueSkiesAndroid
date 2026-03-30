@@ -45,11 +45,37 @@ class FlightRepository @Inject constructor(
 
     suspend fun searchFlights(query: String, date: String? = null): Result<List<Flight>> {
         return try {
+            // iOS approach: try schedules endpoint first (returns complete airport data)
+            val scheduleFlights = trySchedulesSearch(query, date)
+            if (scheduleFlights.isNotEmpty()) {
+                return Result.success(scheduleFlights)
+            }
+
+            // Fallback: basic search → enhanced search
             val response = api.searchFlights(query = query, date = date)
             if (response.isSuccessful) {
                 val body = response.body()
                 val flights = body?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
                 cacheFlights(body?.flights ?: emptyList())
+
+                // If any results have ??? codes, try enhanced search for better data
+                val hasIncomplete = flights.any { it.originCode == "???" || it.destinationCode == "???" }
+                if (hasIncomplete) {
+                    val enhancedResult = searchEnhancedFlights(query, date, quick = true)
+                    val enhancedFlights = enhancedResult.getOrNull()
+                    if (!enhancedFlights.isNullOrEmpty()) {
+                        val enhancedMap = enhancedFlights.associateBy { it.id }
+                        val merged = flights.map { flight ->
+                            if (flight.originCode == "???" || flight.destinationCode == "???") {
+                                enhancedMap[flight.id] ?: flight
+                            } else {
+                                flight
+                            }
+                        }
+                        return Result.success(merged)
+                    }
+                }
+
                 Result.success(flights)
             } else {
                 Log.w(TAG, "Search failed: ${response.code()} ${response.message()}")
@@ -65,6 +91,39 @@ class FlightRepository @Inject constructor(
             }
         }
     }
+
+    /**
+     * Try the schedules endpoint first (like iOS PersonalFlightManager.findMatchingFlights).
+     * This endpoint returns complete airport data including codes, names, cities, coordinates.
+     */
+    private suspend fun trySchedulesSearch(query: String, date: String?): List<Flight> {
+        // Only try schedules if query looks like a flight number (letters + digits)
+        val trimmed = query.trim().uppercase()
+        if (!trimmed.matches(Regex("^[A-Z]{2,3}\\s*\\d{1,5}$"))) return emptyList()
+
+        // Strip spaces for the API call (e.g., "PGT 7062" → "PGT7062")
+        val flightNumber = trimmed.replace("\\s+".toRegex(), "")
+
+        return try {
+            val response = api.getFlightSchedules(
+                flightNumber = flightNumber,
+                date = date,
+                maxPages = 2
+            )
+            if (response.isSuccessful) {
+                val flights = response.body()?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
+                Log.d(TAG, "Schedules search for '$flightNumber': ${flights.size} results")
+                flights
+            } else {
+                Log.d(TAG, "Schedules search failed: ${response.code()}")
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Schedules search error", e)
+            emptyList()
+        }
+    }
+
 
     suspend fun searchEnhancedFlights(
         query: String,
@@ -93,26 +152,62 @@ class FlightRepository @Inject constructor(
         destination: String? = null
     ): Result<Flight> {
         return try {
+            var flight: Flight? = null
+
             val response = api.getFlightDetails(flightId = flightId, date = date)
             if (response.isSuccessful) {
                 val backendFlight = response.body()?.resolvedFlight
                 if (backendFlight != null) {
-                    Result.success(Flight.fromBackend(backendFlight))
-                } else {
-                    Result.failure(Exception("No flight data in response"))
+                    flight = Flight.fromBackend(backendFlight)
                 }
+            }
+
+            // Try enhanced if basic failed or returned incomplete data (??? codes)
+            if (flight == null || flight.destinationCode == "???" || flight.originCode == "???") {
+                try {
+                    val enhancedResponse = api.getEnhancedFlightDetails(
+                        faFlightId = flightId, origin = origin, destination = destination, date = date
+                    )
+                    if (enhancedResponse.isSuccessful) {
+                        val bf = enhancedResponse.body()?.resolvedFlight
+                        if (bf != null) {
+                            val enhanced = Flight.fromBackend(bf)
+                            flight = if (flight != null) {
+                                // Merge: prefer enhanced data for missing fields
+                                flight.copy(
+                                    originCode = if (flight.originCode == "???") enhanced.originCode else flight.originCode,
+                                    originName = flight.originName ?: enhanced.originName,
+                                    originCity = flight.originCity ?: enhanced.originCity,
+                                    originCountry = flight.originCountry ?: enhanced.originCountry,
+                                    originLat = flight.originLat ?: enhanced.originLat,
+                                    originLon = flight.originLon ?: enhanced.originLon,
+                                    originTimezone = flight.originTimezone ?: enhanced.originTimezone,
+                                    destinationCode = if (flight.destinationCode == "???") enhanced.destinationCode else flight.destinationCode,
+                                    destinationName = flight.destinationName ?: enhanced.destinationName,
+                                    destinationCity = flight.destinationCity ?: enhanced.destinationCity,
+                                    destinationCountry = flight.destinationCountry ?: enhanced.destinationCountry,
+                                    destinationLat = flight.destinationLat ?: enhanced.destinationLat,
+                                    destinationLon = flight.destinationLon ?: enhanced.destinationLon,
+                                    destinationTimezone = flight.destinationTimezone ?: enhanced.destinationTimezone,
+                                    scheduledArrival = flight.scheduledArrival ?: enhanced.scheduledArrival,
+                                    estimatedArrival = flight.estimatedArrival ?: enhanced.estimatedArrival,
+                                    arrivalGate = flight.arrivalGate ?: enhanced.arrivalGate,
+                                    arrivalTerminal = flight.arrivalTerminal ?: enhanced.arrivalTerminal
+                                )
+                            } else {
+                                enhanced
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Enhanced details fallback failed", e)
+                }
+            }
+
+            if (flight != null) {
+                Result.success(flight)
             } else {
-                // Try enhanced details as fallback
-                val enhancedResponse = api.getEnhancedFlightDetails(
-                    faFlightId = flightId, origin = origin, destination = destination, date = date
-                )
-                if (enhancedResponse.isSuccessful) {
-                    val bf = enhancedResponse.body()?.resolvedFlight
-                    if (bf != null) Result.success(Flight.fromBackend(bf))
-                    else Result.failure(Exception("No flight data"))
-                } else {
-                    Result.failure(Exception("Details failed: ${response.code()}"))
-                }
+                Result.failure(Exception("No flight data in response"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Flight details error", e)
@@ -372,7 +467,42 @@ class FlightRepository @Inject constructor(
     }
 
     suspend fun deletePersonalFlight(localId: String) {
+        // Get flight info before deleting so we can unsubscribe from backend
+        val entity = personalFlightDao.getPersonalFlight(localId)
+
+        // Delete locally first for immediate UI update
         personalFlightDao.deletePersonalFlightById(localId)
+
+        // Unsubscribe from backend alerts (like iOS AlertSubscriptionService)
+        // Try both IATA (e.g. TK7) and ICAO (e.g. THY7) idents, since the backend
+        // worker canonicalizes to ICAO but we may only have the IATA variant stored.
+        if (entity != null) {
+            val departureDate = entity.scheduledDeparture?.take(10) // "2026-03-30T..." → "2026-03-30"
+
+            // Collect unique ident variants to try
+            val identsToTry = mutableSetOf<String>()
+
+            // 1. The stored flight number (usually IATA, e.g. "TK7")
+            identsToTry.add(entity.flightNumber.uppercase())
+
+            // 2. Extract ICAO ident from flightId (FA flight ID format: "THY7-1680000000-schedule-0030")
+            val icaoFromFlightId = entity.flightId.split("-").firstOrNull()?.uppercase()
+            if (!icaoFromFlightId.isNullOrEmpty()) {
+                identsToTry.add(icaoFromFlightId)
+            }
+
+            for (ident in identsToTry) {
+                try {
+                    Log.d(TAG, "Unsubscribing from flight alerts: $ident ($departureDate)")
+                    api.unsubscribeFromFlight(
+                        flightIdent = ident,
+                        departureDate = departureDate
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to unsubscribe ($ident) from flight alerts", e)
+                }
+            }
+        }
     }
 
     suspend fun refreshPersonalFlight(personalFlight: PersonalFlight): Result<PersonalFlight> {

@@ -164,6 +164,14 @@ interface TrueSkiesApi {
         @Path("shareCode") shareCode: String
     ): Response<BackendSharedFlightResponse>
 
+    // ── Passport / Visa ──
+
+    @GET("/api/passport-visa/check")
+    suspend fun checkVisa(
+        @Query("passport") passport: String,
+        @Query("destination") destination: String
+    ): Response<VisaCheckResponse>
+
     // ── Service Status ──
 
     @GET("/api/aeroapi/status")
@@ -171,6 +179,14 @@ interface TrueSkiesApi {
 
     @GET("/api/enhanced-flights/service/status")
     suspend fun getServiceStatus(): Response<BackendServiceStatusResponse>
+
+    // ── Alert Subscriptions ──
+
+    @DELETE("/api/alerts/unsubscribe-by-flight")
+    suspend fun unsubscribeFromFlight(
+        @Query("flightIdent") flightIdent: String,
+        @Query("departureDate") departureDate: String? = null
+    ): Response<HealthResponse>
 
     // ── Auth (iOS device registration) ──
 

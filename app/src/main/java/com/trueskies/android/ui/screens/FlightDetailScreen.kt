@@ -38,6 +38,8 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.trueskies.android.domain.models.Flight
 import com.trueskies.android.domain.models.FlightStatus
+import com.trueskies.android.domain.models.VisaCategory
+import com.trueskies.android.domain.models.VisaRequirement
 import com.trueskies.android.domain.models.WeatherInfo
 import com.trueskies.android.ui.components.FlightStatusBadge
 import com.trueskies.android.ui.components.LiquidGlassCard
@@ -224,7 +226,11 @@ fun FlightDetailScreen(
                     Spacer(Modifier.height(TrueSkiesSpacing.sm))
 
                     // ── Visa Requirement Card ──
-                    VisaRequirementCard()
+                    VisaRequirementCard(
+                        visaRequirement = uiState.visaRequirement,
+                        isLoading = uiState.visaLoading,
+                        error = uiState.visaError
+                    )
 
                     // ── Delete Button (only when tracking this flight) ──
                     if (uiState.isAddedToPersonal) {
@@ -1590,7 +1596,38 @@ private fun RouteHistoryCard(flight: Flight) {
 // ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun VisaRequirementCard() {
+private fun VisaRequirementCard(
+    visaRequirement: VisaRequirement?,
+    isLoading: Boolean,
+    error: String?
+) {
+    val iconTint: Color
+    val iconVector: androidx.compose.ui.graphics.vector.ImageVector
+    val bgAlpha: Float
+
+    when (visaRequirement?.category) {
+        VisaCategory.VISA_FREE -> {
+            iconTint = TrueSkiesColors.StatusOnTime
+            iconVector = Icons.Default.CheckCircle
+            bgAlpha = 0.15f
+        }
+        VisaCategory.VISA_ON_ARRIVAL, VisaCategory.E_VISA -> {
+            iconTint = TrueSkiesColors.StatusDelayed
+            iconVector = Icons.Default.Info
+            bgAlpha = 0.15f
+        }
+        VisaCategory.VISA_REQUIRED -> {
+            iconTint = TrueSkiesColors.StatusCancelled
+            iconVector = Icons.Default.Block
+            bgAlpha = 0.15f
+        }
+        else -> {
+            iconTint = TrueSkiesColors.TextMuted
+            iconVector = Icons.Default.Language
+            bgAlpha = 0.15f
+        }
+    }
+
     LiquidGlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -1602,15 +1639,23 @@ private fun VisaRequirementCard() {
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(TrueSkiesColors.TextMuted.copy(alpha = 0.15f)),
+                    .background(iconTint.copy(alpha = bgAlpha)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Default.Language,
-                    contentDescription = null,
-                    tint = TrueSkiesColors.TextMuted,
-                    modifier = Modifier.size(22.dp)
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = TrueSkiesColors.AccentBlue,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        iconVector,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
             Spacer(Modifier.width(TrueSkiesSpacing.md))
             Column(modifier = Modifier.weight(1f)) {
@@ -1619,11 +1664,35 @@ private fun VisaRequirementCard() {
                     style = TrueSkiesTypography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = TrueSkiesColors.TextPrimary
                 )
-                Text(
-                    text = "Unable to load visa requirements",
-                    style = TrueSkiesTypography.bodySmall,
-                    color = TrueSkiesColors.TextSecondary
-                )
+                when {
+                    isLoading -> {
+                        Text(
+                            text = "Checking visa requirements…",
+                            style = TrueSkiesTypography.bodySmall,
+                            color = TrueSkiesColors.TextSecondary
+                        )
+                    }
+                    visaRequirement != null -> {
+                        Text(
+                            text = visaRequirement.requirement,
+                            style = TrueSkiesTypography.bodySmall,
+                            color = iconTint
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "Based on ${visaRequirement.passportCountry} passport",
+                            style = TrueSkiesTypography.labelSmall,
+                            color = TrueSkiesColors.TextMuted
+                        )
+                    }
+                    error != null -> {
+                        Text(
+                            text = error,
+                            style = TrueSkiesTypography.bodySmall,
+                            color = TrueSkiesColors.TextSecondary
+                        )
+                    }
+                }
             }
         }
     }

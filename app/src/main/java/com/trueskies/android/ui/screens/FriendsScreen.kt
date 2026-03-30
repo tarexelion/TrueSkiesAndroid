@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -137,7 +137,7 @@ fun FriendsScreen(
                 onDeleteFlight = { viewModel.removeSharedFlight(it.entity.shareCode) }
             )
         },
-        sheetPeekHeight = 200.dp,
+        sheetPeekHeight = 340.dp,
         sheetShape = RoundedCornerShape(
             topStart = TrueSkiesCornerRadius.xl,
             topEnd = TrueSkiesCornerRadius.xl
@@ -268,7 +268,7 @@ private fun FlightSelectorRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun FriendsSheetContent(
     sharedFlights: List<SharedPersonalFlight>,
@@ -279,9 +279,17 @@ private fun FriendsSheetContent(
     onFlightClick: (String) -> Unit = {},
     onDeleteFlight: (SharedPersonalFlight) -> Unit = {}
 ) {
+    val isImeVisible = WindowInsets.isImeVisible
+    val maxSheetHeight = if (isImeVisible) {
+        (LocalConfiguration.current.screenHeightDp * 0.90f).dp
+    } else {
+        (LocalConfiguration.current.screenHeightDp * 0.85f).dp
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(max = maxSheetHeight)
             .padding(horizontal = TrueSkiesSpacing.lg, vertical = TrueSkiesSpacing.sm),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -384,19 +392,21 @@ private fun FriendsSheetContent(
             }
         }
 
-        // Shared flights list — using the same FlightCard as My Flights
-        if (sharedFlights.isNotEmpty()) {
-            Spacer(Modifier.height(TrueSkiesSpacing.lg))
+        Spacer(Modifier.height(TrueSkiesSpacing.lg))
 
-            sharedFlights.forEach { item ->
-                key(item.entity.id) {
+        // Shared flights list — scrollable LazyColumn
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalArrangement = Arrangement.spacedBy(TrueSkiesSpacing.xs),
+            contentPadding = PaddingValues(bottom = TrueSkiesSpacing.xxl)
+        ) {
+            if (sharedFlights.isNotEmpty()) {
+                items(sharedFlights, key = { it.entity.id }) { item ->
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { value ->
                             if (value == SwipeToDismissBoxValue.EndToStart) {
                                 onDeleteFlight(item)
                             }
-                            // Always return false so the card snaps back;
-                            // the actual removal happens via the Flow update
                             false
                         }
                     )
@@ -404,27 +414,11 @@ private fun FriendsSheetContent(
                     SwipeToDismissBox(
                         state = dismissState,
                         backgroundContent = {
-                            val color by animateColorAsState(
-                                when (dismissState.targetValue) {
-                                    SwipeToDismissBoxValue.EndToStart -> TrueSkiesColors.StatusCancelled
-                                    else -> Color.Transparent
-                                },
-                                label = "swipeBg"
-                            )
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .clip(RoundedCornerShape(TrueSkiesCornerRadius.lg))
-                                    .background(color)
-                                    .padding(horizontal = TrueSkiesSpacing.xl),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Remove",
-                                    tint = Color.White
-                                )
-                            }
+                                    .background(Color.Transparent)
+                            )
                         },
                         enableDismissFromStartToEnd = false,
                         enableDismissFromEndToStart = true
@@ -434,13 +428,35 @@ private fun FriendsSheetContent(
                             onClick = { onFlightClick(item.entity.id) }
                         )
                     }
-
-                    Spacer(Modifier.height(TrueSkiesSpacing.xs))
+                }
+            } else {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.People,
+                                contentDescription = null,
+                                modifier = Modifier.size(TrueSkiesSpacing.xxxl),
+                                tint = TrueSkiesColors.TextMuted.copy(alpha = 0.5f)
+                            )
+                            Spacer(Modifier.height(TrueSkiesSpacing.xs))
+                            Text(
+                                text = "Share a flight or scan a code to get started",
+                                style = TrueSkiesTypography.bodyMedium,
+                                color = TrueSkiesColors.TextTertiary
+                            )
+                        }
+                    }
                 }
             }
         }
-
-        Spacer(Modifier.height(TrueSkiesSpacing.md))
     }
 }
 

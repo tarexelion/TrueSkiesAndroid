@@ -21,28 +21,35 @@ class SettingsViewModel @Inject constructor(
         val useImperialUnits: Boolean = true,
         val use24HourTime: Boolean = true,
         val nervousFlyerEnabled: Boolean = false,
-        val shareDiagnostics: Boolean = true
+        val shareDiagnostics: Boolean = true,
+        val citizenshipCountry: String = ""
     )
 
     val uiState: StateFlow<SettingsUiState> = combine(
-        prefs.notificationsEnabled,
-        prefs.departureAlerts,
-        prefs.gateChangeAlerts,
-        prefs.statusChangeAlerts,
-        prefs.useImperialUnits,
-        prefs.use24HourTime,
-        prefs.nervousFlyerEnabled,
-        prefs.shareDiagnostics
-    ) { values ->
+        combine(
+            prefs.notificationsEnabled,
+            prefs.departureAlerts,
+            prefs.gateChangeAlerts,
+            prefs.statusChangeAlerts
+        ) { a -> a },
+        combine(
+            prefs.useImperialUnits,
+            prefs.use24HourTime,
+            prefs.nervousFlyerEnabled,
+            prefs.shareDiagnostics
+        ) { b -> b },
+        prefs.citizenshipCountry
+    ) { a, b, citizenship ->
         SettingsUiState(
-            notificationsEnabled  = values[0] as Boolean,
-            departureAlerts       = values[1] as Boolean,
-            gateChangeAlerts      = values[2] as Boolean,
-            statusChangeAlerts    = values[3] as Boolean,
-            useImperialUnits      = values[4] as Boolean,
-            use24HourTime         = values[5] as Boolean,
-            nervousFlyerEnabled   = values[6] as Boolean,
-            shareDiagnostics      = values[7] as Boolean
+            notificationsEnabled  = a[0] as Boolean,
+            departureAlerts       = a[1] as Boolean,
+            gateChangeAlerts      = a[2] as Boolean,
+            statusChangeAlerts    = a[3] as Boolean,
+            useImperialUnits      = b[0] as Boolean,
+            use24HourTime         = b[1] as Boolean,
+            nervousFlyerEnabled   = b[2] as Boolean,
+            shareDiagnostics      = b[3] as Boolean,
+            citizenshipCountry    = citizenship
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -54,4 +61,5 @@ class SettingsViewModel @Inject constructor(
     fun setUse24HourTime(v: Boolean)        = viewModelScope.launch { prefs.setUse24HourTime(v) }
     fun setNervousFlyerEnabled(v: Boolean)  = viewModelScope.launch { prefs.setNervousFlyerEnabled(v) }
     fun setShareDiagnostics(v: Boolean)     = viewModelScope.launch { prefs.setShareDiagnostics(v) }
+    fun setCitizenshipCountry(v: String)   = viewModelScope.launch { prefs.setCitizenshipCountry(v) }
 }

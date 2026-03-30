@@ -32,6 +32,7 @@ import com.google.maps.android.compose.*
 import com.trueskies.android.domain.models.Flight
 import com.trueskies.android.ui.theme.*
 import com.trueskies.android.ui.viewmodels.MapViewModel
+import com.trueskies.android.ui.viewmodels.SearchViewModel
 import com.trueskies.android.util.GreatCircle
 
 /**
@@ -45,23 +46,31 @@ import com.trueskies.android.util.GreatCircle
 @Composable
 fun HomeScreen(
     onFlightClick: (String) -> Unit,
-    mapViewModel: MapViewModel = hiltViewModel()
+    mapViewModel: MapViewModel = hiltViewModel(),
+    searchViewModel: SearchViewModel = hiltViewModel()
 ) {
     val mapState by mapViewModel.uiState.collectAsStateWithLifecycle()
+    val searchState by searchViewModel.uiState.collectAsStateWithLifecycle()
     val scaffoldState = rememberBottomSheetScaffoldState(
         bottomSheetState = rememberStandardBottomSheetState(
             initialValue = SheetValue.PartiallyExpanded
         )
     )
-    val scope = rememberCoroutineScope()
     val isImeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(isImeVisible) {
-        if (isImeVisible) {
-            scope.launch { scaffoldState.bottomSheetState.expand() }
+    // Sheet should be expanded when keyboard is up, searching, or showing results
+    val shouldExpand = isImeVisible
+            || searchState.isSearching
+            || (searchState.hasSearched && searchState.query.isNotEmpty())
+
+    // Use hasSearched as an additional key so the effect re-fires after search completes
+    // (shouldExpand may stay true throughout the keyboard→search→results flow)
+    LaunchedEffect(shouldExpand, searchState.hasSearched) {
+        if (shouldExpand) {
+            scaffoldState.bottomSheetState.expand()
         } else {
-            scope.launch { scaffoldState.bottomSheetState.partialExpand() }
+            scaffoldState.bottomSheetState.partialExpand()
         }
     }
 
@@ -73,10 +82,13 @@ fun HomeScreen(
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
         sheetContent = {
-            MyFlightsSheetContent(onFlightClick = onFlightClick)
+            MyFlightsSheetContent(
+                onFlightClick = onFlightClick,
+                searchViewModel = searchViewModel
+            )
         },
-        // Peek: drag handle + search bar + ~1 card — mirrors iOS PersonalFlightsPanel collapsed height
-        sheetPeekHeight = 260.dp,
+        // Peek: drag handle + search bar + enough room for "No flights found" state
+        sheetPeekHeight = 340.dp,
         sheetShape = RoundedCornerShape(
             topStart = TrueSkiesCornerRadius.xl,
             topEnd = TrueSkiesCornerRadius.xl

@@ -5,13 +5,17 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.trueskies.android.data.remote.api.OpenMeteoApi
+import com.trueskies.android.data.preferences.UserPreferencesRepository
+import com.trueskies.android.data.remote.api.TrueSkiesApi
 import com.trueskies.android.data.repository.FlightRepository
 import com.trueskies.android.domain.models.Flight
+import com.trueskies.android.domain.models.VisaRequirement
 import com.trueskies.android.domain.models.WeatherInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,6 +23,8 @@ import javax.inject.Inject
 class FlightDetailViewModel @Inject constructor(
     private val repository: FlightRepository,
     private val openMeteoApi: OpenMeteoApi,
+    private val trueSkiesApi: TrueSkiesApi,
+    private val userPrefs: UserPreferencesRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -31,7 +37,10 @@ class FlightDetailViewModel @Inject constructor(
         val notes: String = "",
         val arrivalWeather: WeatherInfo? = null,
         val weatherLoading: Boolean = false,
-        val weatherError: String? = null
+        val weatherError: String? = null,
+        val visaRequirement: VisaRequirement? = null,
+        val visaLoading: Boolean = false,
+        val visaError: String? = null
     )
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -68,6 +77,7 @@ class FlightDetailViewModel @Inject constructor(
                         isLoading = false
                     )
                     loadArrivalWeather(flight)
+                    loadVisaRequirement(flight)
                 },
                 onFailure = { e ->
                     _uiState.value = _uiState.value.copy(
@@ -121,6 +131,58 @@ class FlightDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     weatherLoading = false,
                     weatherError = "Unable to load"
+                )
+            }
+        }
+    }
+
+    private fun loadVisaRequirement(flight: Flight) {
+        val destCountry = flight.destinationCountry ?: return
+
+        viewModelScope.launch {
+            val passportCountry = userPrefs.citizenshipCountry.first().ifEmpty {
+                _uiState.value = _uiState.value.copy(
+                    visaLoading = false,
+                    visaError = "Set your home country in Settings"
+                )
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(visaLoading = true, visaError = null)
+            try {
+                val response = trueSkiesApi.checkVisa(
+                    passport = passportCountry,
+                    destination = destCountry
+                )
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body?.success == true && body.requirement != null) {
+                        _uiState.value = _uiState.value.copy(
+                            visaRequirement = VisaRequirement.fromResponse(
+                                requirement = body.requirement,
+                                visaRequired = body.visaRequired,
+                                visaFree = body.visaFree,
+                                passportCountry = passportCountry,
+                                destinationCountry = destCountry
+                            ),
+                            visaLoading = false
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            visaLoading = false,
+                            visaError = "No visa data available"
+                        )
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        visaLoading = false,
+                        visaError = "Unable to load visa requirements"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("FlightDetailVM", "Visa check failed", e)
+                _uiState.value = _uiState.value.copy(
+                    visaLoading = false,
+                    visaError = "Unable to load visa requirements"
                 )
             }
         }
