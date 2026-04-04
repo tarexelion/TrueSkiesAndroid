@@ -80,7 +80,21 @@ fun TrueSkiesNavHost() {
                 )
             }
             composable("settings") {
-                SettingsScreen(onBack = { navController.popBackStack() })
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigateToNotificationSettings = {
+                        navController.navigate("notification_settings")
+                    },
+                    onNavigateToAccountSettings = {
+                        navController.navigate("account_settings")
+                    }
+                )
+            }
+            composable("notification_settings") {
+                NotificationSettingsScreen(onBack = { navController.popBackStack() })
+            }
+            composable("account_settings") {
+                AccountSettingsScreen(onBack = { navController.popBackStack() })
             }
             composable("about") {
                 AboutScreen(onBack = { navController.popBackStack() })

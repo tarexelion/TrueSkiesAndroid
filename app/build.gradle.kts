@@ -32,6 +32,9 @@ android {
 
         buildConfigField("String", "TRUESKIES_API_KEY", "\"${localProperties.getProperty("TRUESKIES_API_KEY", "")}\"")
         buildConfigField("String", "API_BASE_URL", "\"https://trueskies-backend.fly.dev\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${localProperties.getProperty("SUPABASE_URL", "")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localProperties.getProperty("SUPABASE_ANON_KEY", "")}\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")}\"")
 
         // Google Maps API key placeholder
         manifestPlaceholders["MAPS_API_KEY"] = localProperties.getProperty("MAPS_API_KEY", "YOUR_MAPS_API_KEY_HERE")
@@ -121,4 +124,14 @@ dependencies {
     // QR Code generation + scanning
     implementation(libs.zxing.core)
     implementation(libs.zxing.android.embedded)
+
+    // Supabase Auth
+    implementation(libs.supabase.auth)
+    implementation(libs.supabase.postgrest)
+    implementation(libs.ktor.client.android)
+
+    // Google Credential Manager (for Sign in with Google)
+    implementation(libs.credentials)
+    implementation(libs.credentials.play.services)
+    implementation(libs.googleid)
 }

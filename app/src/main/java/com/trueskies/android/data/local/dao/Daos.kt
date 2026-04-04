@@ -55,6 +55,9 @@ interface PersonalFlightDao {
 
     @Query("SELECT COUNT(*) FROM personal_flights")
     suspend fun getPersonalFlightCount(): Int
+
+    @Query("SELECT * FROM personal_flights ORDER BY addedAt DESC")
+    suspend fun getAllPersonalFlightsSnapshot(): List<PersonalFlightEntity>
 }
 
 @Dao
@@ -77,6 +80,9 @@ interface SharedFlightDao {
 
     @Query("DELETE FROM shared_flights")
     suspend fun deleteAllSharedFlights()
+
+    @Query("SELECT * FROM shared_flights ORDER BY createdAt DESC")
+    suspend fun getAllSharedFlightsSnapshot(): List<SharedFlightEntity>
 }
 
 @Dao

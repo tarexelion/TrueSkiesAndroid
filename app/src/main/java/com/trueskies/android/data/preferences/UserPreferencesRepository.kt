@@ -29,6 +29,10 @@ class UserPreferencesRepository @Inject constructor(
         val NERVOUS_FLYER_ENABLED    = booleanPreferencesKey("nervous_flyer_enabled")
         val SHARE_DIAGNOSTICS        = booleanPreferencesKey("share_diagnostics")
         val CITIZENSHIP_COUNTRY      = stringPreferencesKey("citizenship_country")
+        val REDUCE_VISUAL_EFFECTS    = booleanPreferencesKey("reduce_visual_effects")
+        val DISPLAY_NAME             = stringPreferencesKey("display_name")
+        val UNITS_PREFERENCE         = stringPreferencesKey("units_preference")
+        val TIME_FORMAT_PREFERENCE   = stringPreferencesKey("time_format_preference")
     }
 
     val notificationsEnabled: Flow<Boolean> =
@@ -57,6 +61,18 @@ class UserPreferencesRepository @Inject constructor(
 
     val citizenshipCountry: Flow<String> =
         context.dataStore.data.map { it[Keys.CITIZENSHIP_COUNTRY] ?: "" }
+
+    val reduceVisualEffects: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.REDUCE_VISUAL_EFFECTS] ?: false }
+
+    val displayName: Flow<String> =
+        context.dataStore.data.map { it[Keys.DISPLAY_NAME] ?: "" }
+
+    val unitsPreference: Flow<String> =
+        context.dataStore.data.map { it[Keys.UNITS_PREFERENCE] ?: "automatic" }
+
+    val timeFormatPreference: Flow<String> =
+        context.dataStore.data.map { it[Keys.TIME_FORMAT_PREFERENCE] ?: "automatic" }
 
     suspend fun setNotificationsEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.NOTIFICATIONS_ENABLED] = enabled }
@@ -92,5 +108,25 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setCitizenshipCountry(country: String) {
         context.dataStore.edit { it[Keys.CITIZENSHIP_COUNTRY] = country }
+    }
+
+    suspend fun setReduceVisualEffects(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.REDUCE_VISUAL_EFFECTS] = enabled }
+    }
+
+    suspend fun setDisplayName(name: String) {
+        context.dataStore.edit { it[Keys.DISPLAY_NAME] = name }
+    }
+
+    suspend fun setUnitsPreference(units: String) {
+        context.dataStore.edit { it[Keys.UNITS_PREFERENCE] = units }
+    }
+
+    suspend fun setTimeFormatPreference(format: String) {
+        context.dataStore.edit { it[Keys.TIME_FORMAT_PREFERENCE] = format }
+    }
+
+    suspend fun clearAllData() {
+        context.dataStore.edit { it.clear() }
     }
 }

@@ -197,12 +197,7 @@ private fun LeftStateColumn(flight: Flight, status: FlightStatus) {
         }
         status == FlightStatus.ARRIVED || status == FlightStatus.LANDED ||
         status == FlightStatus.COMPLETED || status == FlightStatus.TAXIING_IN -> {
-            DurationDisplay(
-                durationMinutes = flight.routeDuration,
-                labelTop = null,
-                labelBottom = null,
-                color = TrueSkiesColors.TextPrimary
-            )
+            LandedDisplay()
         }
         else -> {
             // Countdown to departure
@@ -576,7 +571,7 @@ fun FlightRow(
 
             // Row 2: Date · Aircraft · Registration · Duration · Progress
             val details = buildList {
-                val dateStr = formatDate(flight.bestDepartureTime)
+                val dateStr = formatDate(flight.bestDepartureTime, flight.originTimezone)
                 if (dateStr.isNotEmpty()) add(dateStr)
                 flight.aircraftType?.let { add(it) }
                 flight.aircraftRegistration?.let { add(it) }
@@ -663,7 +658,7 @@ fun SearchResultFlightCard(
                     )
                     Spacer(Modifier.weight(1f))
                     Text(
-                        text = formatDate(flight.bestDepartureTime),
+                        text = formatDate(flight.bestDepartureTime, flight.originTimezone),
                         style = TrueSkiesTypography.bodySmall,
                         color = TrueSkiesColors.TextMuted,
                         maxLines = 1
@@ -781,9 +776,9 @@ private fun SearchStatusIndicator(flight: Flight, status: FlightStatus) {
                 )
             }
         }
-        // Scheduled — show departure time
+        // Scheduled — show departure time in origin's local timezone
         else -> {
-            val depTime = formatTime(flight.bestDepartureTime)
+            val depTime = formatTime(flight.bestDepartureTime, flight.originTimezone)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = depTime,
@@ -837,11 +832,14 @@ private fun searchStatusColor(status: FlightStatus): Color {
     }
 }
 
-private fun formatDate(isoString: String?): String {
+private fun formatDate(isoString: String?, timezone: String? = null): String {
     if (isoString == null) return ""
     return try {
         val zdt = ZonedDateTime.parse(isoString)
-        zdt.format(DateTimeFormatter.ofPattern("EEE, d MMM"))
+        val localZdt = if (timezone != null) {
+            zdt.withZoneSameInstant(java.time.ZoneId.of(timezone))
+        } else zdt
+        localZdt.format(DateTimeFormatter.ofPattern("EEE, d MMM"))
     } catch (e: Exception) {
         try {
             val s = isoString.substringBefore("Z").substringBefore("+")

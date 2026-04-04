@@ -1,11 +1,13 @@
 package com.trueskies.android.ui.viewmodels
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.trueskies.android.data.repository.FlightRepository
 import com.trueskies.android.domain.models.Flight
 import com.trueskies.android.domain.models.PersonalFlight
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +19,11 @@ class FlightsViewModel @Inject constructor(
     private val repository: FlightRepository
 ) : ViewModel() {
 
+    companion object {
+        private const val TAG = "FlightsViewModel"
+        private const val REFRESH_INTERVAL_MS = 60_000L // Refresh active flights every 60s
+    }
+
     data class FlightsUiState(
         val personalFlights: List<PersonalFlight> = emptyList(),
         val isLoading: Boolean = false,
@@ -27,8 +34,11 @@ class FlightsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(FlightsUiState())
     val uiState: StateFlow<FlightsUiState> = _uiState.asStateFlow()
 
+    private var hasRefreshedOnce = false
+
     init {
         observePersonalFlights()
+        startPeriodicRefresh()
     }
 
     private fun observePersonalFlights() {
@@ -39,6 +49,35 @@ class FlightsViewModel @Inject constructor(
                     personalFlights = flights,
                     isLoading = false
                 )
+                // Auto-refresh from API on first load to get latest status/times
+                if (!hasRefreshedOnce && flights.isNotEmpty()) {
+                    hasRefreshedOnce = true
+                    refreshFlightsFromApi()
+                }
+            }
+        }
+    }
+
+    /**
+     * Periodically refresh flights that are active (in-flight, boarding, etc.)
+     * to keep status and arrival times up to date on the card.
+     */
+    private fun startPeriodicRefresh() {
+        viewModelScope.launch {
+            while (true) {
+                delay(REFRESH_INTERVAL_MS)
+                val flights = _uiState.value.personalFlights
+                val activeFlights = flights.filter { it.flight.status.isActive }
+                if (activeFlights.isNotEmpty()) {
+                    Log.d(TAG, "Periodic refresh: ${activeFlights.size} active flights")
+                    for (pf in activeFlights) {
+                        try {
+                            repository.refreshPersonalFlight(pf)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to refresh ${pf.flight.flightNumber}", e)
+                        }
+                    }
+                }
             }
         }
     }
@@ -46,11 +85,19 @@ class FlightsViewModel @Inject constructor(
     fun refreshFlights() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isRefreshing = true)
-            val currentFlights = _uiState.value.personalFlights
-            for (pf in currentFlights) {
-                repository.refreshPersonalFlight(pf)
-            }
+            refreshFlightsFromApi()
             _uiState.value = _uiState.value.copy(isRefreshing = false)
+        }
+    }
+
+    private suspend fun refreshFlightsFromApi() {
+        val currentFlights = _uiState.value.personalFlights
+        for (pf in currentFlights) {
+            try {
+                repository.refreshPersonalFlight(pf)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to refresh ${pf.flight.flightNumber}", e)
+            }
         }
     }
 
