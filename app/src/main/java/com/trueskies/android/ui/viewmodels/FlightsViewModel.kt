@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.ZonedDateTime
 import javax.inject.Inject
 
 @HiltViewModel
@@ -22,6 +24,7 @@ class FlightsViewModel @Inject constructor(
     companion object {
         private const val TAG = "FlightsViewModel"
         private const val REFRESH_INTERVAL_MS = 60_000L // Refresh active flights every 60s
+        private const val COMPLETED_FLIGHT_HIDE_HOURS = 4L // Hide landed flights after 4 hours
     }
 
     data class FlightsUiState(
@@ -45,8 +48,9 @@ class FlightsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             repository.getPersonalFlightsFlow().collect { flights ->
+                val visibleFlights = flights.filter { !isCompletedAndExpired(it) }
                 _uiState.value = _uiState.value.copy(
-                    personalFlights = flights,
+                    personalFlights = visibleFlights,
                     isLoading = false
                 )
                 // Auto-refresh from API on first load to get latest status/times
@@ -98,6 +102,22 @@ class FlightsViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to refresh ${pf.flight.flightNumber}", e)
             }
+        }
+    }
+
+    /**
+     * Returns true if a flight's status is completed/landed/arrived/cancelled
+     * and its arrival time was more than [COMPLETED_FLIGHT_HIDE_HOURS] hours ago.
+     */
+    private fun isCompletedAndExpired(pf: PersonalFlight): Boolean {
+        if (!pf.flight.status.isCompleted) return false
+        val arrivalTimeStr = pf.flight.bestArrivalTime ?: return false
+        return try {
+            val arrivalTime = ZonedDateTime.parse(arrivalTimeStr)
+            val hoursSinceArrival = Duration.between(arrivalTime, ZonedDateTime.now()).toHours()
+            hoursSinceArrival >= COMPLETED_FLIGHT_HIDE_HOURS
+        } catch (e: Exception) {
+            false
         }
     }
 

@@ -295,10 +295,24 @@ fun FlightMapOverlay(
 
     // ── 4. Airplane marker at current position ──
     if (hasPosition) {
+        // Use API heading if available, otherwise compute bearing from flight path
+        val effectiveHeading = remember(flight.id, flight.heading, flight.latitude, flight.longitude) {
+            flight.heading?.toFloat() ?: run {
+                // Compute bearing from current position toward destination
+                if (hasDestination) {
+                    GreatCircle.bearing(currentLatLng!!, destinationLatLng!!).toFloat()
+                } else if (hasOrigin) {
+                    // Fallback: bearing from origin to current position
+                    GreatCircle.bearing(originLatLng!!, currentLatLng!!).toFloat()
+                } else 0f
+            }
+        }
+
         MarkerComposable(
             state = MarkerState(position = currentLatLng!!),
             anchor = androidx.compose.ui.geometry.Offset(0.5f, 0.5f),
             zIndex = 1f,
+            flat = true,
             onClick = {
                 onFlightClick(flight.id)
                 true
@@ -306,7 +320,7 @@ fun FlightMapOverlay(
             title = flight.displayFlightNumber,
             snippet = "${flight.originCode} → ${flight.destinationCode}"
         ) {
-            AircraftMapMarker(heading = flight.heading?.toFloat() ?: 0f)
+            AircraftMapMarker(heading = effectiveHeading)
         }
     }
 }
@@ -328,13 +342,13 @@ private fun AircraftMapMarker(heading: Float) {
                 .shadow(8.dp, CircleShape, ambientColor = FlightPathColor, spotColor = FlightPathColor)
                 .background(FlightPathColor.copy(alpha = 0.2f), CircleShape)
         )
-        // Airplane icon — rotated by heading (add 45° because the Flight icon points NE by default)
+        // Airplane icon rotated by heading (degrees clockwise from north)
         Icon(
             imageVector = Icons.Filled.Flight,
             contentDescription = null,
             modifier = Modifier
                 .size(24.dp)
-                .rotate(heading + 45f),
+                .rotate(heading),
             tint = Color.White
         )
     }

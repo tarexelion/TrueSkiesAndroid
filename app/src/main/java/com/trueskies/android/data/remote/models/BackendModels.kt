@@ -258,9 +258,13 @@ data class BackendAirport(
     @SerialName("code_iata") val codeIata: String? = null,
     @SerialName("code_icao") val codeIcao: String? = null,
 ) {
-    /** Resolves the best display code: code > displayCode > iata > codeIata > icao > codeIcao */
+    /** Resolves the best display code: code > displayCode > iata > codeIata > icao > codeIcao > city */
     val resolvedCode: String
-        get() = code ?: displayCode ?: iata ?: codeIata ?: icao ?: codeIcao ?: "???"
+        get() = code ?: displayCode ?: iata ?: codeIata ?: icao ?: codeIcao ?: city ?: "???"
+
+    /** Whether this airport has a real IATA/ICAO code (not just a city fallback) */
+    val hasAirportCode: Boolean
+        get() = code != null || displayCode != null || iata != null || codeIata != null || icao != null || codeIcao != null
 }
 
 @Serializable
@@ -293,7 +297,9 @@ data class BackendFlightTime(
 @Serializable
 data class BackendRoute(
     val distance: Double? = null,
-    val duration: Int? = null
+    val duration: Int? = null,
+    val origin: BackendAirport? = null,
+    val destination: BackendAirport? = null
 )
 
 @Serializable

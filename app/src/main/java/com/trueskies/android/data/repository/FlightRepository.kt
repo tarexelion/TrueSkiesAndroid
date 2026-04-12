@@ -623,7 +623,7 @@ class FlightRepository @Inject constructor(
         return try {
             Log.d("ShareFlight", "Joining share: $shareCode")
             val joinRequest = BackendJoinRequest(
-                user = BackendShareUser(id = "android-user")
+                user = BackendShareUser(id = "android-user", displayName = "Android User")
             )
             val response = api.joinSharedFlight(shareCode, joinRequest)
             Log.d("ShareFlight", "Join response: ${response.code()}")

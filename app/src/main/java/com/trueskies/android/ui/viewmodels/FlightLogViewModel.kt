@@ -78,7 +78,8 @@ class FlightLogViewModel @Inject constructor(
             totalFlightTime = formatFlightTime(filtered),
             unlockedMilestones = computeMilestones(filtered.size),
             travelStories = stories,
-            recentFlights = logItems
+            recentFlights = logItems,
+            mapFlights = filtered.map { it.flight }
         )
     }
 

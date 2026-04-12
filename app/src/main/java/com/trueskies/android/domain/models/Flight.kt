@@ -189,6 +189,13 @@ data class Flight(
 
         /** Create a domain Flight from a BackendFlight response */
         fun fromBackend(bf: BackendFlight): Flight {
+            // Merge top-level origin/destination with route origin/destination
+            // (some API responses only have airport data in route, not at top level)
+            val originAirport = bf.origin
+            val destAirport = bf.destination
+            val routeOrigin = bf.route?.origin
+            val routeDest = bf.route?.destination
+
             return Flight(
                 id = bf.id,
                 flightNumber = bf.flightNumber,
@@ -201,20 +208,24 @@ data class Flight(
                 aircraftType = bf.aircraft?.type,
                 aircraftIcao = bf.aircraft?.icao,
                 aircraftIata = bf.aircraft?.iata,
-                originCode = bf.origin?.resolvedCode ?: "???",
-                originName = bf.origin?.name,
-                originCity = bf.origin?.city,
-                originCountry = bf.origin?.country,
-                originLat = bf.origin?.latitude,
-                originLon = bf.origin?.longitude,
-                originTimezone = bf.origin?.timezone,
-                destinationCode = bf.destination?.resolvedCode ?: "???",
-                destinationName = bf.destination?.name,
-                destinationCity = bf.destination?.city,
-                destinationCountry = bf.destination?.country,
-                destinationLat = bf.destination?.latitude,
-                destinationLon = bf.destination?.longitude,
-                destinationTimezone = bf.destination?.timezone,
+                originCode = originAirport?.resolvedCode
+                    ?: routeOrigin?.resolvedCode
+                    ?: "???",
+                originName = originAirport?.name ?: routeOrigin?.name,
+                originCity = originAirport?.city ?: routeOrigin?.city,
+                originCountry = originAirport?.country ?: routeOrigin?.country,
+                originLat = originAirport?.latitude ?: routeOrigin?.latitude,
+                originLon = originAirport?.longitude ?: routeOrigin?.longitude,
+                originTimezone = originAirport?.timezone ?: routeOrigin?.timezone,
+                destinationCode = destAirport?.resolvedCode
+                    ?: routeDest?.resolvedCode
+                    ?: "???",
+                destinationName = destAirport?.name ?: routeDest?.name,
+                destinationCity = destAirport?.city ?: routeDest?.city,
+                destinationCountry = destAirport?.country ?: routeDest?.country,
+                destinationLat = destAirport?.latitude ?: routeDest?.latitude,
+                destinationLon = destAirport?.longitude ?: routeDest?.longitude,
+                destinationTimezone = destAirport?.timezone ?: routeDest?.timezone,
                 latitude = bf.position?.latitude,
                 longitude = bf.position?.longitude,
                 altitude = bf.position?.altitude,

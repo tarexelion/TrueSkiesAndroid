@@ -39,7 +39,7 @@ class FriendsViewModel @Inject constructor(
             val result = repository.createSharedFlight(
                 flight = personalFlight.flight,
                 userId = "android-user",
-                displayName = null
+                displayName = "Android User"
             )
             _shareResult.value = result.fold(
                 onSuccess = { shareCode ->

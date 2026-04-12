@@ -5,12 +5,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.trueskies.android.data.repository.FlightRepository
 import com.trueskies.android.domain.models.Flight
+import com.trueskies.android.domain.models.PersonalFlight
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.ZonedDateTime
 import javax.inject.Inject
 
 @HiltViewModel
@@ -37,10 +40,14 @@ class MapViewModel @Inject constructor(
     companion object {
         private const val TAG = "MapViewModel"
         private const val POSITION_POLL_INTERVAL_MS = 15_000L // 15 seconds
+        private const val COMPLETED_FLIGHT_HIDE_HOURS = 4L
     }
 
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
+
+    /** IDs of personal flights currently in Room — used to prevent race conditions */
+    private val activePersonalFlightIds = MutableStateFlow<Set<String>>(emptySet())
 
     init {
         checkBackendHealth()
@@ -52,8 +59,12 @@ class MapViewModel @Inject constructor(
         viewModelScope.launch {
             var firstLoad = true
             repository.getPersonalFlightsFlow().collect { personalFlights ->
+                val activeFlights = personalFlights
+                    .filter { !isCompletedAndExpired(it) }
+                    .map { it.flight }
+                activePersonalFlightIds.value = activeFlights.map { it.id }.toSet()
                 _uiState.value = _uiState.value.copy(
-                    personalFlights = personalFlights.map { it.flight }
+                    personalFlights = activeFlights
                 )
                 // Fetch live positions immediately on first load
                 if (firstLoad && personalFlights.isNotEmpty()) {
@@ -110,7 +121,10 @@ class MapViewModel @Inject constructor(
             }
         }
 
-        _uiState.value = _uiState.value.copy(personalFlights = updated)
+        // Filter against Room source of truth to prevent re-adding deleted flights
+        val validIds = activePersonalFlightIds.value
+        val filtered = updated.filter { it.id in validIds }
+        _uiState.value = _uiState.value.copy(personalFlights = filtered)
     }
 
     fun loadFlightsInBounds(
@@ -134,6 +148,17 @@ class MapViewModel @Inject constructor(
                     )
                 }
             )
+        }
+    }
+
+    private fun isCompletedAndExpired(pf: PersonalFlight): Boolean {
+        if (!pf.flight.status.isCompleted) return false
+        val arrivalTimeStr = pf.flight.bestArrivalTime ?: return false
+        return try {
+            val arrivalTime = ZonedDateTime.parse(arrivalTimeStr)
+            Duration.between(arrivalTime, ZonedDateTime.now()).toHours() >= COMPLETED_FLIGHT_HIDE_HOURS
+        } catch (e: Exception) {
+            false
         }
     }
 

@@ -60,6 +60,18 @@ object GreatCircle {
     }
 
     /**
+     * Initial bearing (forward azimuth) from one point to another, in degrees [0, 360).
+     */
+    fun bearing(from: LatLng, to: LatLng): Double {
+        val lat1 = Math.toRadians(from.latitude)
+        val lat2 = Math.toRadians(to.latitude)
+        val dLon = Math.toRadians(to.longitude - from.longitude)
+        val y = sin(dLon) * cos(lat2)
+        val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        return (Math.toDegrees(atan2(y, x)) + 360) % 360
+    }
+
+    /**
      * Haversine distance between two points in kilometers.
      */
     fun haversineDistance(from: LatLng, to: LatLng): Double {

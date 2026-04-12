@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -24,15 +25,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.*
 import com.trueskies.android.ui.components.LiquidGlassCard
 import com.trueskies.android.ui.theme.*
 import com.trueskies.android.ui.viewmodels.FlightLogViewModel
 
 /**
- * Flight Log tab — mirrors iOS FlightLogScreen / FlightLogScreenContent.
- * Shows profile header, time range selector, travel summary stats,
+ * Flight Log tab — map + draggable bottom sheet.
+ * Map shows flight routes for the selected time period.
+ * Sheet shows profile header, time range selector, travel summary stats,
  * travel stories, and trip-grouped flights.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlightLogScreen(
     onSettingsClick: () -> Unit = {},
@@ -41,26 +47,89 @@ fun FlightLogScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(38.5, 30.0), 5f)
+    }
+
+    val scaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            initialValue = SheetValue.PartiallyExpanded
+        )
+    )
+
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
+        sheetContent = {
+            FlightLogSheetContent(
+                state = state,
+                onRangeChange = { viewModel.selectRange(it) },
+                onSettingsClick = onSettingsClick,
+                onFlightClick = onFlightClick
+            )
+        },
+        sheetPeekHeight = 340.dp,
+        sheetShape = RoundedCornerShape(
+            topStart = TrueSkiesCornerRadius.xl,
+            topEnd = TrueSkiesCornerRadius.xl
+        ),
+        sheetContainerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
+        sheetDragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = TrueSkiesColors.TextMuted.copy(alpha = 0.4f)
+            )
+        },
+        sheetTonalElevation = 0.dp,
+        sheetShadowElevation = 20.dp,
+        containerColor = Color.Transparent
+    ) {
+        // Full-screen satellite map showing flight log routes
+        Box(modifier = Modifier.fillMaxSize()) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                properties = MapProperties(
+                    mapType = MapType.HYBRID,
+                    isMyLocationEnabled = false
+                ),
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    myLocationButtonEnabled = false,
+                    compassEnabled = false
+                )
+            ) {
+                state.mapFlights.forEach { flight ->
+                    FlightMapOverlay(flight = flight, onFlightClick = onFlightClick)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlightLogSheetContent(
+    state: FlightLogUiState,
+    onRangeChange: (FlightLogRange) -> Unit,
+    onSettingsClick: () -> Unit,
+    onFlightClick: (String) -> Unit
+) {
+    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.90f).dp
+
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .background(TrueSkiesColors.SurfacePrimary)
-            .statusBarsPadding()
+            .fillMaxWidth()
+            .heightIn(max = maxSheetHeight)
     ) {
-        // Sticky header — profile section + separator
-        Column {
-            ProfileHeaderSection(
-                userName = state.userName,
-                onProfileTap = { /* TODO: show user profile sheet */ },
-                onSettingsAction = onSettingsClick
-            )
+        // Profile header
+        ProfileHeaderSection(
+            userName = state.userName,
+            onProfileTap = { },
+            onSettingsAction = onSettingsClick
+        )
 
-            // Subtle separator line (iOS: Color.white.opacity(0.15), height 0.5)
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = Color.White.copy(alpha = 0.15f)
-            )
-        }
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = Color.White.copy(alpha = 0.15f)
+        )
 
         // Scrollable content
         Column(
@@ -72,28 +141,21 @@ fun FlightLogScreen(
         ) {
             Spacer(Modifier.height(TrueSkiesSpacing.sm))
 
-            // Time range selector — mirrors iOS TimeRangeSelector
             TimeRangeSelector(
                 ranges = state.availableRanges,
                 selectedRange = state.selectedRange,
-                onRangeChange = { viewModel.selectRange(it) }
+                onRangeChange = onRangeChange
             )
 
             if (state.hasFlights) {
-                // Travel summary stats card
                 TravelSummarySection(state = state)
-
-                // Travel stories section
                 TravelStoriesSection(state = state)
-
-                // Trip-grouped flights list
                 TripGroupedFlightsSection(
                     flights = state.recentFlights,
                     onFlightClick = onFlightClick
                 )
             } else {
-                // Empty state — mirrors iOS EmptyTravelState
-                EmptyTravelState(onAddFlight = { /* TODO: switch to My Flights tab */ })
+                EmptyTravelState(onAddFlight = { })
             }
 
             Spacer(modifier = Modifier.height(TrueSkiesSpacing.xxl))
@@ -545,5 +607,6 @@ data class FlightLogUiState(
     val totalFlightTime: String = "0 h",
     val unlockedMilestones: Int = 0,
     val travelStories: List<TravelStory> = emptyList(),
-    val recentFlights: List<FlightLogItem> = emptyList()
+    val recentFlights: List<FlightLogItem> = emptyList(),
+    val mapFlights: List<com.trueskies.android.domain.models.Flight> = emptyList()
 )
