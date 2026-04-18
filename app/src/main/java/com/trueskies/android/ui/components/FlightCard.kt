@@ -200,9 +200,18 @@ private fun LeftStateColumn(flight: Flight, status: FlightStatus) {
             LandedDisplay()
         }
         else -> {
-            // Countdown to departure
+            // Countdown to departure, or infer state from times
             val depTime = parseIso(flight.estimatedDeparture ?: flight.scheduledDeparture)
-            if (depTime != null) {
+            val arrTime = parseIso(flight.bestArrivalTime)
+            val now = ZonedDateTime.now()
+            if (depTime != null && now.isAfter(depTime)) {
+                // Departure time has passed — infer flight state from arrival time
+                if (arrTime != null && now.isAfter(arrTime)) {
+                    LandedDisplay()
+                } else {
+                    InFlightDisplay()
+                }
+            } else if (depTime != null) {
                 CountdownDisplay(depTime = depTime, isDelayed = (flight.departureDelay ?: 0) > 0)
             } else {
                 DurationDisplay(durationMinutes = flight.routeDuration, color = TrueSkiesColors.TextPrimary)

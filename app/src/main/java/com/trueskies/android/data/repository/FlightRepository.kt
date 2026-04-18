@@ -16,6 +16,7 @@ import com.trueskies.android.data.remote.models.BackendSharePermissions
 import com.trueskies.android.data.remote.models.BackendShareRequest
 import com.trueskies.android.data.remote.models.BackendShareUser
 import com.trueskies.android.domain.models.*
+import com.trueskies.android.util.AirlineCodeRegistry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -44,43 +45,47 @@ class FlightRepository @Inject constructor(
     // ── Search ──
 
     suspend fun searchFlights(query: String, date: String? = null): Result<List<Flight>> {
+        // Generate ICAO/IATA variants (e.g. "WMT5YV" → ["WMT5YV", "W45YV", "WMT5", "W45"])
+        val candidates = AirlineCodeRegistry.searchCandidates(query)
+        Log.d(TAG, "Search candidates for '$query': $candidates")
+
         return try {
-            // iOS approach: try schedules endpoint first (returns complete airport data)
-            val scheduleFlights = trySchedulesSearch(query, date)
-            if (scheduleFlights.isNotEmpty()) {
-                return Result.success(scheduleFlights)
+            // iOS approach: use enhanced search endpoint as primary (handles ATC callsigns etc.)
+            // Try each candidate until we get results
+            for (candidate in candidates) {
+                Log.d(TAG, "Trying enhanced search for '$candidate'")
+                val enhancedResult = searchEnhancedFlights(candidate, date)
+                val flights = enhancedResult.getOrNull()
+                if (!flights.isNullOrEmpty()) {
+                    Log.d(TAG, "Enhanced search hit for '$candidate': ${flights.size} results")
+                    return Result.success(flights)
+                }
             }
 
-            // Fallback: basic search → enhanced search
-            val response = api.searchFlights(query = query, date = date)
-            if (response.isSuccessful) {
-                val body = response.body()
-                val flights = body?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
-                cacheFlights(body?.flights ?: emptyList())
+            // Fallback: try schedules endpoint (returns complete airport data)
+            for (candidate in candidates) {
+                val scheduleFlights = trySchedulesSearch(candidate, date)
+                if (scheduleFlights.isNotEmpty()) {
+                    Log.d(TAG, "Schedules hit for '$candidate': ${scheduleFlights.size} results")
+                    return Result.success(scheduleFlights)
+                }
+            }
 
-                // If any results have ??? codes, try enhanced search for better data
-                val hasIncomplete = flights.any { it.originCode == "???" || it.destinationCode == "???" }
-                if (hasIncomplete) {
-                    val enhancedResult = searchEnhancedFlights(query, date, quick = true)
-                    val enhancedFlights = enhancedResult.getOrNull()
-                    if (!enhancedFlights.isNullOrEmpty()) {
-                        val enhancedMap = enhancedFlights.associateBy { it.id }
-                        val merged = flights.map { flight ->
-                            if (flight.originCode == "???" || flight.destinationCode == "???") {
-                                enhancedMap[flight.id] ?: flight
-                            } else {
-                                flight
-                            }
-                        }
-                        return Result.success(merged)
+            // Fallback: try basic search endpoint
+            for (candidate in candidates) {
+                val response = api.searchFlights(query = candidate, date = date)
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    val flights = body?.flights?.map { Flight.fromBackend(it) } ?: emptyList()
+                    if (flights.isNotEmpty()) {
+                        cacheFlights(body?.flights ?: emptyList())
+                        return Result.success(flights)
                     }
                 }
-
-                Result.success(flights)
-            } else {
-                Log.w(TAG, "Search failed: ${response.code()} ${response.message()}")
-                searchEnhancedFlights(query, date)
             }
+
+            Log.w(TAG, "All candidates empty for '$query'")
+            Result.success(emptyList())
         } catch (e: Exception) {
             Log.e(TAG, "Search error", e)
             val cached = flightDao.searchFlights(query)
@@ -97,9 +102,10 @@ class FlightRepository @Inject constructor(
      * This endpoint returns complete airport data including codes, names, cities, coordinates.
      */
     private suspend fun trySchedulesSearch(query: String, date: String?): List<Flight> {
-        // Only try schedules if query looks like a flight number (letters + digits)
+        // Only try schedules if query looks like a flight number
+        // iOS pattern: airline prefix (2-3 chars) + digits (1-5) + optional ATC suffix (0-3 letters)
         val trimmed = query.trim().uppercase()
-        if (!trimmed.matches(Regex("^[A-Z]{2,3}\\s*\\d{1,5}$"))) return emptyList()
+        if (!trimmed.matches(Regex("^([A-Z]{2,3}|[A-Z][0-9]|[0-9][A-Z])\\s*\\d{1,5}[A-Z]{0,3}$"))) return emptyList()
 
         // Strip spaces for the API call (e.g., "PGT 7062" → "PGT7062")
         val flightNumber = trimmed.replace("\\s+".toRegex(), "")

@@ -3,6 +3,7 @@ package com.trueskies.android.ui.screens
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
@@ -47,7 +48,10 @@ fun FriendsScreen(
     val context = LocalContext.current
     var showFlightSelector by remember { mutableStateOf(false) }
 
-    val personalFlights by viewModel.personalFlights.collectAsState()
+    val allPersonalFlights by viewModel.personalFlights.collectAsState()
+    val personalFlights = remember(allPersonalFlights) {
+        allPersonalFlights.filter { !it.confirmedStatus.isCompleted }
+    }
     val shareResult by viewModel.shareResult.collectAsState()
     val joinResult by viewModel.joinResult.collectAsState()
     val sharedFlights by viewModel.sharedFlightsAsPersonal.collectAsState()
@@ -89,8 +93,10 @@ fun FriendsScreen(
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val code = result.contents
+        Log.d("ShareFlight", "QR scan raw content: $code")
         if (code != null) {
             val shareCode = extractShareCode(code)
+            Log.d("ShareFlight", "Extracted share code: $shareCode")
             if (shareCode != null) {
                 viewModel.joinSharedFlight(shareCode)
             } else {
@@ -467,9 +473,12 @@ private fun FriendsSheetContent(
 private fun pasteShareLink(context: Context, viewModel: FriendsViewModel) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
     val text = clipboard?.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+    Log.d("ShareFlight", "Paste clipboard content: $text")
     val shareCode = extractShareCode(text)
     if (shareCode != null) {
         viewModel.joinSharedFlight(shareCode)
+    } else if (text.contains("trueskiesapp.com/share") || text.contains("trueskies://")) {
+        Toast.makeText(context, "Share link is missing a code — the share may have failed", Toast.LENGTH_LONG).show()
     } else {
         Toast.makeText(context, "No valid flight link in clipboard", Toast.LENGTH_SHORT).show()
     }
